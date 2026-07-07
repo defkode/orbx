@@ -317,6 +317,44 @@ orbx::cmd_status() {
     "$ORBX_NAME" "$state" "$prov" "$ip" "$ORBX_TEMPLATE" "$(orbx::mount_target)"
 }
 
+orbx::cmd_templates() {
+  orbx::resolve_context 2>/dev/null || true
+  local dir name seen=" "
+  printf '%-16s %s\n' NAME SOURCE
+  for dir in "$HOME/.orbx/templates" "$ORBX_BUNDLED_TEMPLATE_DIR" "$(orbx::script_dir)/../templates"; do
+    [[ -d "$dir" ]] || continue
+    for f in "$dir"/*.yaml; do
+      [[ -e "$f" ]] || continue
+      name="$(basename "$f" .yaml)"
+      [[ "$seen" == *" $name "* ]] && continue
+      seen+="$name "
+      local src="user"; [[ "$dir" == "$HOME/.orbx/templates" ]] || src="built-in"
+      local mark=""; [[ "$name" == "${ORBX_TEMPLATE:-default}" ]] && mark=" (active)"
+      printf '%-16s %s%s\n' "$name" "$src" "$mark"
+    done
+  done
+}
+
+orbx::cmd_config() {
+  printf '# effective config (files: %s, ./.orbxrc)\n' "${ORBX_GLOBAL_CONFIG:-$HOME/.orbx/config}"
+  orbx::effective_config
+}
+
+orbx::cmd_init() {
+  local target="$PWD/.orbxrc"
+  if [[ -e "$target" && "${ORBX_FORCE:-0}" != "1" ]]; then
+    orbx::die ".orbxrc already exists (use: orbx init --force)"
+  fi
+  cat > "$target" <<'EOF'
+# orbx project config — committed, shared with your team.
+template = default
+# image  = ubuntu:26.04
+# name   = my-machine     # default: the sanitized folder name
+# mount  = false          # set false to skip auto-mounting $PWD
+EOF
+  printf 'wrote %s\n' "$target"
+}
+
 # Run main only when executed directly; do nothing when sourced (tests).
 # (Unit tests run under bats' bash, which must also be >= 4 — see Task 1 Step 2.)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
