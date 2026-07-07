@@ -83,6 +83,30 @@ orbx::mount_spec() {
   printf '%s:%s' "$host" "$(orbx::mount_target "$host")"
 }
 
+orbx::script_dir() {
+  local src="${BASH_SOURCE[0]}"
+  while [[ -h "$src" ]]; do src="$(readlink "$src")"; done
+  ( cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd )
+}
+
+orbx::resolve_template() {
+  local name="$1" dir
+  for dir in \
+    "${ORBX_TEMPLATE_DIR:-}" \
+    "$HOME/.orbx/templates" \
+    "$ORBX_BUNDLED_TEMPLATE_DIR" \
+    "$(orbx::script_dir)/../templates"
+  do
+    [[ -n "$dir" ]] || continue
+    if [[ -f "$dir/$name.yaml" ]]; then
+      printf '%s' "$dir/$name.yaml"
+      return 0
+    fi
+  done
+  printf 'orbx: template %q not found. Run: orbx templates\n' "$name" >&2
+  return 1
+}
+
 orbx::main() {
   case "${1:-}" in
     --version) orbx::version ;;
