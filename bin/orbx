@@ -18,6 +18,23 @@ orbx::require_bash() {
 
 orbx::version() { printf 'orbx %s\n' "$ORBX_VERSION"; }
 
+orbx::sanitize_name() {
+  local raw="$1" out
+  out="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
+  out="$(printf '%s' "$out" | sed -E 's/-+/-/g; s/^-+//; s/-+$//')"
+  printf '%s' "$out"
+}
+
+orbx::derive_name() {
+  local name
+  name="$(orbx::sanitize_name "$(basename "$PWD")")"
+  if [[ -z "$name" ]]; then
+    printf 'orbx: cannot derive a machine name from %s; pass --name\n' "$PWD" >&2
+    return 1
+  fi
+  printf '%s' "$name"
+}
+
 orbx::main() {
   case "${1:-}" in
     --version) orbx::version ;;
