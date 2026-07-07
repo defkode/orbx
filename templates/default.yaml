@@ -105,6 +105,57 @@ write_files:
       │  Postgres role = your username (superuser, trust auth, local). │
       └──────────────────────────────────────────────────────────────┘
 
+  # Default Starship prompt: icon-free and low-noise. Shows user, machine as
+  # <name>@orb, path, and git only -- no language versions or container badge.
+  # Seeded into each user's ~/.config on first boot (see user-setup.sh) so it
+  # stays per-user editable. Edit here to change the default for new sandboxes.
+  - path: /etc/starship.toml
+    permissions: '0644'
+    content: |
+      # orbx default prompt. Edit ~/.config/starship.toml to customize; full
+      # reference at https://starship.rs/config
+      #
+      # Only the modules listed in `format` render, so language versions
+      # (node/ruby/python/...) and the systemd "container" badge are omitted by
+      # simply not being here -- add e.g. `$nodejs` back if you want them.
+
+      format = """
+      $username$hostname$directory$git_branch$git_status
+      $character"""
+
+      add_newline = true
+
+      [username]
+      show_always = true
+      format = "[$user]($style) "
+      style_user = "bold green"
+      style_root = "bold red"
+
+      # Machine shown as "<hostname>@orb" (e.g. lmm@orb) with no ssh globe icon.
+      [hostname]
+      ssh_only = false
+      format = "[$hostname@orb]($style) "
+      style = "bold blue"
+
+      [directory]
+      truncation_length = 3
+      truncate_to_repo = true
+      format = "[$path]($style) "
+      style = "bold cyan"
+
+      # No branch glyph -- just "on <branch>".
+      [git_branch]
+      symbol = ""
+      format = "on [$branch]($style) "
+      style = "bold purple"
+
+      [git_status]
+      style = "bold yellow"
+
+      [character]
+      success_symbol = "[❯](bold green)"
+      error_symbol = "[❯](bold red)"
+
   # All provisioning logic lives in one script for readability.
   - path: /usr/local/sbin/provision.sh
     permissions: '0755'
@@ -246,6 +297,13 @@ write_files:
       # instead of interactive login:
       # export ANTHROPIC_API_KEY=sk-ant-...
       ENVEOF
+      fi
+
+      # Seed the Starship prompt config from the system default so it's editable
+      # per-user (only if the user doesn't already have their own).
+      mkdir -p "$HOME/.config"
+      if [ ! -f "$HOME/.config/starship.toml" ] && [ -f /etc/starship.toml ]; then
+        cp /etc/starship.toml "$HOME/.config/starship.toml"
       fi
 
       # Sensible git defaults (name/email left for you to set)
