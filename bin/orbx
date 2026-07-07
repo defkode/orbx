@@ -229,6 +229,38 @@ orbx::cmd_up() {
 orbx::machine_exists()  { orb list -q        | grep -Fxq -- "$1"; }
 orbx::machine_running() { orb list -r -q     | grep -Fxq -- "$1"; }
 
+orbx::wait_ready() {
+  local name="$1"
+  local timeout="${ORBX_READY_TIMEOUT:-1200}"
+  local interval="${ORBX_POLL_INTERVAL:-5}"
+  local delay="${ORBX_POLL_DELAY:-2}" waited=0 status
+  (( delay > 0 )) && sleep "$delay"
+  while :; do
+    status="$(orb -m "$name" -u root cat /etc/sandbox-status 2>/dev/null || true)"
+    case "$status" in
+      ready)  return 0 ;;
+      failed) printf 'orbx: provisioning failed. See: orbx logs\n' >&2; return 1 ;;
+    esac
+    (( waited >= timeout )) && break
+    (( interval > 0 )) && sleep "$interval"
+    waited=$(( waited + (interval > 0 ? interval : 1) ))
+  done
+  printf 'orbx: timed out after %ss waiting for ready. See: orbx logs\n' "$timeout" >&2
+  return 1
+}
+
+orbx::ensure_up() {
+  if orbx::machine_exists "$ORBX_NAME"; then
+    if ! orbx::machine_running "$ORBX_NAME"; then
+      orb start "$ORBX_NAME"
+    fi
+  else
+    printf 'orbx: creating %s (mount %s)\n' "$ORBX_NAME" "${ORBX_MOUNTS[0]:-none}" >&2
+    "${ORBX_CREATE_CMD[@]}"
+  fi
+  orbx::wait_ready "$ORBX_NAME"
+}
+
 # Run main only when executed directly; do nothing when sourced (tests).
 # (Unit tests run under bats' bash, which must also be >= 4 — see Task 1 Step 2.)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
