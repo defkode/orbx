@@ -35,3 +35,18 @@ setup_ready_machine() {
   [ "$status" -eq 0 ]
   grep -q -- "bin/rails -e production" "$ORB_STUB_LOG"
 }
+
+@test "run with no command errors" {
+  orbx_source; setup_ready_machine
+  run orbx_run run
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"needs a command"* ]]
+}
+
+@test "--no-mount opens a shell without cd-ing into a missing mount" {
+  orbx_source; setup_ready_machine
+  run orbx_run --no-mount
+  [ "$status" -eq 0 ]
+  grep -qF 'exec "$SHELL"' "$ORB_STUB_LOG"
+  ! grep -qF 'cd "$1"' "$ORB_STUB_LOG"
+}

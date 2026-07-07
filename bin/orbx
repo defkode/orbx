@@ -3,18 +3,17 @@
 # orbx — per-project OrbStack sandboxes.
 # See: https://github.com/defkode/orbx
 
+# Require bash >= 4 BEFORE any bash-4-only syntax runs at load time (declare -g/-A
+# appear further down). macOS ships bash 3.2, so this guard is POSIX-compatible.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  printf 'orbx: requires bash >= 4 (have %s). macOS: brew install bash\n' "${BASH_VERSION:-unknown}" >&2
+  exit 1
+fi
+
 ORBX_VERSION="0.1.0"
 
 # Replaced at install time by the Homebrew formula. Unstamped in a git checkout.
 ORBX_BUNDLED_TEMPLATE_DIR="@TEMPLATE_DIR@"
-
-orbx::require_bash() {
-  if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-    printf 'orbx: requires bash >= 4 (have %s). macOS: brew install bash\n' \
-      "${BASH_VERSION:-unknown}" >&2
-    return 1
-  fi
-}
 
 orbx::version() { printf 'orbx %s\n' "$ORBX_VERSION"; }
 
@@ -304,21 +303,30 @@ orbx::cmd_shell() {
   orbx::resolve_context
   orbx::build_create_cmd
   orbx::ensure_up
-  # shellcheck disable=SC2016 # intentionally single-quoted: this string is the
-  # *remote* bash -lc script; $1/$SHELL must expand inside the sandbox, not here.
-  orb -m "$ORBX_NAME" bash -lc 'cd "$1" && exec "$SHELL" -l' _ "$(orbx::mount_target)"
+  if [[ "$ORBX_MOUNT_ON" == "true" ]]; then
+    # shellcheck disable=SC2016  # $1/$SHELL expand in the VM shell, not locally
+    orb -m "$ORBX_NAME" bash -lc 'cd "$1" && exec "$SHELL" -l' _ "$(orbx::mount_target)"
+  else
+    # No auto-mount: the project dir doesn't exist in the VM, so open in $HOME.
+    # shellcheck disable=SC2016  # $SHELL expands in the VM shell, not locally
+    orb -m "$ORBX_NAME" bash -lc 'exec "$SHELL" -l'
+  fi
 }
 
 orbx::cmd_default() { orbx::cmd_shell; }
 
 orbx::cmd_run() {
+  [[ $# -gt 0 ]] || orbx::die "run needs a command (e.g. orbx run bin/dev)"
   orbx::resolve_context
   orbx::build_create_cmd
   orbx::ensure_up
-  # shellcheck disable=SC2016 # intentionally single-quoted: this string is the
-  # *remote* bash -lc script; $1/$@ must expand inside the sandbox (via
-  # positional args below), not here — that's how we pass the command safely.
-  orb -m "$ORBX_NAME" bash -lc 'cd "$1" && shift && exec "$@"' _ "$(orbx::mount_target)" "$@"
+  if [[ "$ORBX_MOUNT_ON" == "true" ]]; then
+    # shellcheck disable=SC2016  # $1/$@ expand in the VM shell, not locally
+    orb -m "$ORBX_NAME" bash -lc 'cd "$1" && shift && exec "$@"' _ "$(orbx::mount_target)" "$@"
+  else
+    # shellcheck disable=SC2016  # $@ expands in the VM shell, not locally
+    orb -m "$ORBX_NAME" bash -lc 'exec "$@"' _ "$@"
+  fi
 }
 
 orbx::cmd_stop()  { orbx::resolve_context; orb stop  "$ORBX_NAME"; }
@@ -403,6 +411,5 @@ EOF
 # (Unit tests run under bats' bash, which must also be >= 4 — see Task 1 Step 2.)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   set -euo pipefail
-  orbx::require_bash || exit 1
   orbx::main "$@"
 fi
