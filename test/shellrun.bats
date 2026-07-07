@@ -29,6 +29,15 @@ setup_ready_machine() {
   grep -qF 'exec "$SHELL"' "$ORB_STUB_LOG"
 }
 
+@test "shell wires in the terminfo prelude" {
+  orbx_source; setup_ready_machine
+  run orbx_run
+  [ "$status" -eq 0 ]
+  # The guest-side snippet that fixes line editing must reach the orb invocation.
+  grep -qF 'tic -x -' "$ORB_STUB_LOG"
+  grep -qF 'xterm-256color' "$ORB_STUB_LOG"
+}
+
 @test "run forwards flags after -- verbatim" {
   orbx_source; setup_ready_machine
   run orbx_run run -- bin/rails -e production

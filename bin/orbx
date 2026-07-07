@@ -299,17 +299,44 @@ orbx::ensure_up() {
   orbx::wait_ready "$ORBX_NAME"
 }
 
+# Guest-side prelude run before we exec the real shell/command. Positional $1
+# carries the host's `infocmp -x $TERM` output (may be empty). Terminals like
+# Ghostty, WezTerm, and kitty advertise a $TERM that generic Linux images don't
+# ship a terminfo entry for, so readline mangles backspace, wrapping, and TUIs.
+# If the VM doesn't already know $TERM, seed it from that data; if it can't be
+# seeded, downgrade to a universally-known TERM. Ends with `shift` so callers'
+# own positional args ($1 = mount dir, "$@" = command) line up as before.
+# shellcheck disable=SC2016  # $TERM/$1 must reach the VM literally, not expand here
+ORBX_TERM_PRELUDE='
+if ! infocmp "${TERM:-dumb}" >/dev/null 2>&1; then
+  if [[ -z "$1" ]] || ! printf %s "$1" | tic -x - >/dev/null 2>&1 || ! infocmp "${TERM:-dumb}" >/dev/null 2>&1; then
+    export TERM=xterm-256color
+  fi
+fi
+shift
+'
+
+# Emit the current terminal's terminfo (extended) so the guest can learn a $TERM
+# it does not ship. Empty output (no TERM, or no infocmp) means "nothing to
+# seed" and the prelude falls back to a safe TERM.
+orbx::host_terminfo() {
+  [[ -n "${TERM:-}" ]] || return 0
+  command -v infocmp >/dev/null 2>&1 || return 0
+  infocmp -x "$TERM" 2>/dev/null || true
+}
+
 orbx::cmd_shell() {
   orbx::resolve_context
   orbx::build_create_cmd
   orbx::ensure_up
+  local ti; ti="$(orbx::host_terminfo)"
   if [[ "$ORBX_MOUNT_ON" == "true" ]]; then
     # shellcheck disable=SC2016  # $1/$SHELL expand in the VM shell, not locally
-    orb -m "$ORBX_NAME" bash -lc 'cd "$1" && exec "$SHELL" -l' _ "$(orbx::mount_target)"
+    orb -m "$ORBX_NAME" bash -lc "$ORBX_TERM_PRELUDE"'cd "$1" && exec "$SHELL" -l' _ "$ti" "$(orbx::mount_target)"
   else
     # No auto-mount: the project dir doesn't exist in the VM, so open in $HOME.
     # shellcheck disable=SC2016  # $SHELL expands in the VM shell, not locally
-    orb -m "$ORBX_NAME" bash -lc 'exec "$SHELL" -l'
+    orb -m "$ORBX_NAME" bash -lc "$ORBX_TERM_PRELUDE"'exec "$SHELL" -l' _ "$ti"
   fi
 }
 
@@ -320,12 +347,13 @@ orbx::cmd_run() {
   orbx::resolve_context
   orbx::build_create_cmd
   orbx::ensure_up
+  local ti; ti="$(orbx::host_terminfo)"
   if [[ "$ORBX_MOUNT_ON" == "true" ]]; then
     # shellcheck disable=SC2016  # $1/$@ expand in the VM shell, not locally
-    orb -m "$ORBX_NAME" bash -lc 'cd "$1" && shift && exec "$@"' _ "$(orbx::mount_target)" "$@"
+    orb -m "$ORBX_NAME" bash -lc "$ORBX_TERM_PRELUDE"'cd "$1" && shift && exec "$@"' _ "$ti" "$(orbx::mount_target)" "$@"
   else
     # shellcheck disable=SC2016  # $@ expands in the VM shell, not locally
-    orb -m "$ORBX_NAME" bash -lc 'exec "$@"' _ "$@"
+    orb -m "$ORBX_NAME" bash -lc "$ORBX_TERM_PRELUDE"'exec "$@"' _ "$ti" "$@"
   fi
 }
 
