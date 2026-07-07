@@ -84,8 +84,12 @@ orbx::mount_spec() {
 }
 
 orbx::script_dir() {
-  local src="${BASH_SOURCE[0]}"
-  while [[ -h "$src" ]]; do src="$(readlink "$src")"; done
+  local src="${BASH_SOURCE[0]}" dir
+  while [[ -h "$src" ]]; do
+    dir="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="$dir/$src"   # re-anchor relative symlink targets
+  done
   ( cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd )
 }
 

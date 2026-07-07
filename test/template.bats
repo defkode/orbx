@@ -29,3 +29,12 @@ load helpers/test_helper
   run orbx::resolve_template does-not-exist
   [ "$status" -ne 0 ]
 }
+
+@test "ORBX_TEMPLATE_DIR is searched before the user dir" {
+  orbx_source
+  mkdir -p "$ORBX_TMP/tpl" "$HOME/.orbx/templates"
+  touch "$ORBX_TMP/tpl/default.yaml" "$HOME/.orbx/templates/default.yaml"
+  export ORBX_TEMPLATE_DIR="$ORBX_TMP/tpl"
+  run orbx::resolve_template default
+  [ "$output" = "$ORBX_TMP/tpl/default.yaml" ]
+}

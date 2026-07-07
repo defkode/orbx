@@ -20,3 +20,9 @@ load helpers/test_helper
   run orbx::mount_target
   [ "$output" = "/home/tomasz/code/korelo" ]
 }
+
+@test "mount_spec joins host and target" {
+  orbx_source
+  export USER=tomasz
+  [ "$(orbx::mount_spec "$HOME/code/korelo")" = "$HOME/code/korelo:/home/tomasz/code/korelo" ]
+}
