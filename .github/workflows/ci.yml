@@ -18,6 +18,6 @@ jobs:
           sudo install "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version
       - name: Shellcheck
-        run: shellcheck bin/orbx test/helpers/orb-stub
+        run: shellcheck bin/orbx test/helpers/orb-stub script/release
       - name: Tests
         run: bats test/

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Cut a new orbx release: bump version, run checks, tag, push.
+# Pushing the tag triggers .github/workflows/release.yml, which creates the
+# GitHub release and bumps the Homebrew formula in defkode/homebrew-tap.
+#
+# Usage: script/release X.Y.Z
+set -euo pipefail
+
+version="${1:-}"
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "usage: script/release X.Y.Z" >&2; exit 1
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "working tree not clean — commit or stash first" >&2; exit 1
+fi
+if [[ "$(git branch --show-current)" != "main" ]]; then
+  echo "not on main" >&2; exit 1
+fi
+if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+  echo "tag v$version already exists" >&2; exit 1
+fi
+
+echo "==> checks"
+shellcheck bin/orbx test/helpers/orb-stub
+bats test/
+
+echo "==> bump to $version"
+sed -i.bak -E "s/^ORBX_VERSION=\".*\"/ORBX_VERSION=\"$version\"/" bin/orbx
+sed -i.bak -E "s/orbx [0-9]+\.[0-9]+\.[0-9]+/orbx $version/" test/cli.bats
+rm -f bin/orbx.bak test/cli.bats.bak
+bats test/   # re-verify with the bumped version
+
+echo "==> commit + tag + push"
+git add bin/orbx test/cli.bats
+git commit -m "release v$version"
+git tag "v$version"
+git push origin main
+git push origin "v$version"
+
+echo "==> pushed v$version. The Release workflow will publish the release and bump the formula."
+echo "    watch: gh run watch --repo defkode/orbx"
