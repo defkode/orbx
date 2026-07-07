@@ -31,7 +31,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$ORBX_TMP"
+  rm -rf "${ORBX_TMP:?}"
 }
 
 # Source bin/orbx into the current shell to unit-test its functions.

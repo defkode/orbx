@@ -5,7 +5,7 @@
 printf '%s\n' "$*" >> "${ORB_STUB_LOG:-/dev/null}"
 
 # `orb list -q` / `orb list -r -q` -> machine names, from fixtures.
-if [[ "$1" == "list" ]]; then
+if [[ "${1:-}" == "list" ]]; then
   if [[ "$*" == *"-r"* ]]; then
     cat "${ORB_STUB_RUNNING_FIXTURE:-/dev/null}"
   else
@@ -27,7 +27,7 @@ if [[ "$*" == *"cat /etc/sandbox-status"* ]]; then
 fi
 
 # `orb info NAME -f json` -> fixture JSON.
-if [[ "$1" == "info" ]]; then
+if [[ "${1:-}" == "info" ]]; then
   cat "${ORB_STUB_INFO_FIXTURE:-/dev/null}"
   exit 0
 fi
