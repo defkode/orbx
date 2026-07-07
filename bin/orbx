@@ -111,11 +111,119 @@ orbx::resolve_template() {
   return 1
 }
 
+# Resolved run state (populated by orbx::resolve_context).
+declare -g ORBX_NAME ORBX_IMAGE ORBX_ARCH ORBX_TEMPLATE ORBX_TEMPLATE_PATH ORBX_MOUNT_ON ORBX_DRYRUN ORBX_YES
+declare -ga ORBX_MOUNTS ORBX_CREATE_CMD
+
+orbx::resolve_context() {
+  # Reads effective config, applies parsed flags (already in the ORBX_FLAG_* vars),
+  # and populates the ORBX_* run-state globals.
+  local k v
+  ORBX_TEMPLATE=default; ORBX_IMAGE=ubuntu:26.04; ORBX_ARCH=""; ORBX_MOUNT_ON=true
+  while IFS='=' read -r k v; do
+    case "$k" in
+      template) ORBX_TEMPLATE="$v" ;;
+      image)    ORBX_IMAGE="$v" ;;
+      arch)     ORBX_ARCH="$v" ;;
+      mount)    ORBX_MOUNT_ON="$v" ;;
+      name)     ORBX_NAME="$v" ;;
+    esac
+  done < <(orbx::effective_config)
+
+  # Flag overrides (empty = not set).
+  [[ -n "${ORBX_FLAG_TEMPLATE:-}" ]] && ORBX_TEMPLATE="$ORBX_FLAG_TEMPLATE"
+  [[ -n "${ORBX_FLAG_IMAGE:-}" ]]    && ORBX_IMAGE="$ORBX_FLAG_IMAGE"
+  [[ -n "${ORBX_FLAG_ARCH:-}" ]]     && ORBX_ARCH="$ORBX_FLAG_ARCH"
+  [[ -n "${ORBX_FLAG_NAME:-}" ]]     && ORBX_NAME="$ORBX_FLAG_NAME"
+  [[ "${ORBX_FLAG_NO_MOUNT:-}" == "1" ]] && ORBX_MOUNT_ON=false
+
+  [[ -n "${ORBX_NAME:-}" ]] || ORBX_NAME="$(orbx::derive_name)"
+  ORBX_TEMPLATE_PATH="$(orbx::resolve_template "$ORBX_TEMPLATE")"
+
+  # Assemble the mount list: auto $PWD mount (unless disabled) + explicit --mount.
+  ORBX_MOUNTS=()
+  [[ "$ORBX_MOUNT_ON" == "true" ]] && ORBX_MOUNTS+=("$(orbx::mount_spec)")
+  local m
+  for m in "${ORBX_FLAG_MOUNTS[@]}"; do
+    [[ -n "$m" ]] && ORBX_MOUNTS+=("$m")
+  done
+}
+
+orbx::build_create_cmd() {
+  ORBX_CREATE_CMD=(orb create -c "$ORBX_TEMPLATE_PATH" --isolated)
+  [[ -n "$ORBX_ARCH" ]] && ORBX_CREATE_CMD+=(--arch "$ORBX_ARCH")
+  local m
+  if (( ${#ORBX_MOUNTS[@]} )); then
+    for m in "${ORBX_MOUNTS[@]}"; do ORBX_CREATE_CMD+=(--mount "$m"); done
+  fi
+  ORBX_CREATE_CMD+=("$ORBX_IMAGE" "$ORBX_NAME")
+}
+
+orbx::die() { printf 'orbx: %s\n' "$*" >&2; exit 1; }
+
+orbx::parse_flags() {
+  ORBX_FLAG_MOUNTS=()
+  ORBX_DRYRUN=0; ORBX_YES=0; ORBX_FORCE=0
+  ORBX_ARGS=()
+  while (( $# )); do
+    case "$1" in
+      --name)     ORBX_FLAG_NAME="$2"; shift 2 ;;
+      --template) ORBX_FLAG_TEMPLATE="$2"; shift 2 ;;
+      --image)    ORBX_FLAG_IMAGE="$2"; shift 2 ;;
+      --arch)     ORBX_FLAG_ARCH="$2"; shift 2 ;;
+      --mount)    ORBX_FLAG_MOUNTS+=("$2"); shift 2 ;;
+      --no-mount) ORBX_FLAG_NO_MOUNT=1; shift ;;
+      --dry-run)  ORBX_DRYRUN=1; shift ;;
+      --yes|-y)   ORBX_YES=1; shift ;;
+      --force)    ORBX_FORCE=1; shift ;;
+      --)         shift; while (( $# )); do ORBX_ARGS+=("$1"); shift; done ;;
+      -*)         orbx::die "unknown flag: $1" ;;
+      *)          ORBX_ARGS+=("$1"); shift ;;
+    esac
+  done
+}
+
+orbx::require_orb() {
+  local bin="${ORBX_ORB_BIN:-orb}"
+  command -v "$bin" >/dev/null 2>&1 || orbx::die \
+    "the '$bin' CLI is required. Install OrbStack: https://orbstack.dev"
+}
+
 orbx::main() {
   case "${1:-}" in
-    --version) orbx::version ;;
-    *) printf 'orbx: not implemented yet\n' >&2; return 1 ;;
+    --version) orbx::version; return 0 ;;
+    -h|--help|help) orbx::usage; return 0 ;;
   esac
+  orbx::require_orb
+  orbx::parse_flags "$@"
+  local cmd="${ORBX_ARGS[0]:-shell-default}"
+  if (( ${#ORBX_ARGS[@]} > 1 )); then set -- "${ORBX_ARGS[@]:1}"; else set --; fi
+  case "$cmd" in
+    shell-default) orbx::cmd_default ;;
+    up)        orbx::cmd_up ;;
+    shell)     orbx::cmd_shell ;;
+    run)       orbx::cmd_run "$@" ;;
+    status)    orbx::cmd_status ;;
+    logs)      orbx::cmd_logs ;;
+    stop)      orbx::cmd_stop ;;
+    down)      orbx::cmd_down ;;
+    list|ls)   orbx::cmd_list ;;
+    ip)        orbx::cmd_ip ;;
+    templates) orbx::cmd_templates ;;
+    config)    orbx::cmd_config ;;
+    init)      orbx::cmd_init ;;
+    *)         orbx::die "unknown command: $cmd (try: orbx --help)" ;;
+  esac
+}
+
+orbx::cmd_up() {
+  orbx::resolve_context
+  orbx::build_create_cmd
+  if [[ "$ORBX_DRYRUN" == "1" ]]; then
+    printf '%s ' "${ORBX_CREATE_CMD[@]}"; printf '\n'
+    return 0
+  fi
+  orbx::ensure_up   # implemented in Task 10
 }
 
 # Run main only when executed directly; do nothing when sourced (tests).
