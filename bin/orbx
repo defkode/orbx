@@ -56,7 +56,7 @@ orbx::parse_config_file() {
 }
 
 orbx::effective_config() {
-  declare -A cfg=( [template]=default [image]=ubuntu:26.04 [arch]= [mount]=true )
+  declare -A cfg=( [template]=default [image]=ubuntu:26.04 [arch]="" [mount]=true )
   local src k v
   for src in "${ORBX_GLOBAL_CONFIG:-$HOME/.orbx/config}" "$PWD/.orbxrc"; do
     while IFS='=' read -r k v; do
@@ -191,6 +191,43 @@ orbx::require_orb() {
     "the '$bin' CLI is required. Install OrbStack: https://orbstack.dev"
 }
 
+orbx::usage() {
+  cat <<'EOF'
+orbx — per-project OrbStack Rails + Claude Code sandboxes
+
+USAGE
+  orbx [command] [flags]
+
+COMMANDS
+  (none)        Bring this project's sandbox up (create if needed) and shell in
+  up            Create/start + provision, wait until ready — don't shell in
+  shell         Open a shell in the sandbox
+  run <cmd…>    Run a command inside (flags need --: orbx run -- bin/rails -e prod)
+  status        Show state, provisioning status, template, and mount
+  logs          Tail the provisioning log
+  stop          Stop the machine (keeps data)
+  down          Delete this sandbox permanently (asks first; --yes to skip)
+  list          List all machines + status
+  ip            Print this sandbox's IP
+  templates     List available templates
+  config        Show the effective config
+  init          Scaffold ./.orbxrc in this project (--force to overwrite)
+
+FLAGS
+  --name <name>   Machine name (default: current folder, sanitized)
+  --mount <spec>  Extra host:target mount (repeatable)
+  --no-mount      Disable the automatic $PWD mount
+  --template <n>  Template name (default: from config, else "default")
+  --image <ref>   Base image (default: ubuntu:26.04)
+  --arch <arch>   amd64 | arm64 (default: native)
+  --dry-run       Print the orb command that would run, then exit
+  --yes, -y       Assume yes for confirmations
+  --force         Overwrite when scaffolding (orbx init)
+  -h, --help      Show this help
+  --version       Show version
+EOF
+}
+
 orbx::main() {
   case "${1:-}" in
     --version) orbx::version; return 0 ;;
@@ -267,6 +304,8 @@ orbx::cmd_shell() {
   orbx::resolve_context
   orbx::build_create_cmd
   orbx::ensure_up
+  # shellcheck disable=SC2016 # intentionally single-quoted: this string is the
+  # *remote* bash -lc script; $1/$SHELL must expand inside the sandbox, not here.
   orb -m "$ORBX_NAME" bash -lc 'cd "$1" && exec "$SHELL" -l' _ "$(orbx::mount_target)"
 }
 
@@ -276,6 +315,9 @@ orbx::cmd_run() {
   orbx::resolve_context
   orbx::build_create_cmd
   orbx::ensure_up
+  # shellcheck disable=SC2016 # intentionally single-quoted: this string is the
+  # *remote* bash -lc script; $1/$@ must expand inside the sandbox (via
+  # positional args below), not here — that's how we pass the command safely.
   orb -m "$ORBX_NAME" bash -lc 'cd "$1" && shift && exec "$@"' _ "$(orbx::mount_target)" "$@"
 }
 
