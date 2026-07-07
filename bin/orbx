@@ -35,6 +35,26 @@ orbx::derive_name() {
   printf '%s' "$name"
 }
 
+orbx::trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"   # left-trim
+  s="${s%"${s##*[![:space:]]}"}"   # right-trim
+  printf '%s' "$s"
+}
+
+orbx::parse_config_file() {
+  local file="$1" line key val
+  [[ -f "$file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"                 # drop comments (values cannot contain '#')
+    [[ "$line" == *"="* ]] || continue
+    key="$(orbx::trim "${line%%=*}")"
+    val="$(orbx::trim "${line#*=}")"
+    [[ -n "$key" ]] || continue
+    printf '%s=%s\n' "$key" "$val"
+  done < "$file"
+}
+
 orbx::main() {
   case "${1:-}" in
     --version) orbx::version ;;
