@@ -68,6 +68,21 @@ orbx::effective_config() {
   done | sort
 }
 
+orbx::mount_target() {
+  local host="${1:-$PWD}" home="${HOME%/}" user="${USER:-$(id -un)}"
+  if [[ "$host" == "$home"/* ]]; then
+    printf '/home/%s/%s' "$user" "${host#"$home"/}"
+  else
+    printf '%s' "$host"
+  fi
+}
+
+# Full "host:target" spec for the automatic $PWD mount.
+orbx::mount_spec() {
+  local host="${1:-$PWD}"
+  printf '%s:%s' "$host" "$(orbx::mount_target "$host")"
+}
+
 orbx::main() {
   case "${1:-}" in
     --version) orbx::version ;;
