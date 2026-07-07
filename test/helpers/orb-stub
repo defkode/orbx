@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Fake `orb` used in tests. Records the full argv to $ORB_STUB_LOG (one call
+# per line), and emits scripted output for the few commands orbx inspects.
+
+printf '%s\n' "$*" >> "${ORB_STUB_LOG:-/dev/null}"
+
+# `orb list -q` / `orb list -r -q` -> machine names, from fixtures.
+if [[ "$1" == "list" ]]; then
+  if [[ "$*" == *"-r"* ]]; then
+    cat "${ORB_STUB_RUNNING_FIXTURE:-/dev/null}"
+  else
+    cat "${ORB_STUB_LIST_FIXTURE:-/dev/null}"
+  fi
+  exit 0
+fi
+
+# Status polling: `orb -m NAME -u root cat /etc/sandbox-status`.
+# Pops the next whitespace-separated token from $ORB_STUB_STATUS_SEQ each call.
+if [[ "$*" == *"cat /etc/sandbox-status"* ]]; then
+  seq="${ORB_STUB_STATUS_SEQ:-}"
+  if [[ -n "$seq" && -s "$seq" ]]; then
+    read -r next rest < "$seq"
+    printf '%s\n' "$rest" > "$seq"
+    printf '%s\n' "$next"
+  fi
+  exit 0
+fi
+
+# `orb info NAME -f json` -> fixture JSON.
+if [[ "$1" == "info" ]]; then
+  cat "${ORB_STUB_INFO_FIXTURE:-/dev/null}"
+  exit 0
+fi
+
+exit 0
