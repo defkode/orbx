@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#
+# orbx — per-project OrbStack sandboxes.
+# See: https://github.com/defkode/orbx
+
+ORBX_VERSION="0.1.0"
+
+# Replaced at install time by the Homebrew formula. Unstamped in a git checkout.
+ORBX_BUNDLED_TEMPLATE_DIR="@TEMPLATE_DIR@"
+
+orbx::require_bash() {
+  if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    printf 'orbx: requires bash >= 4 (have %s). macOS: brew install bash\n' \
+      "${BASH_VERSION:-unknown}" >&2
+    return 1
+  fi
+}
+
+orbx::version() { printf 'orbx %s\n' "$ORBX_VERSION"; }
+
+orbx::main() {
+  case "${1:-}" in
+    --version) orbx::version ;;
+    *) printf 'orbx: not implemented yet\n' >&2; return 1 ;;
+  esac
+}
+
+# Run main only when executed directly; do nothing when sourced (tests).
+# (Unit tests run under bats' bash, which must also be >= 4 — see Task 1 Step 2.)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  set -euo pipefail
+  orbx::require_bash || exit 1
+  orbx::main "$@"
+fi

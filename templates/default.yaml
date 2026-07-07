@@ -1,0 +1,303 @@
+#cloud-config
+# =============================================================================
+# Ruby on Rails + Claude Code development sandbox
+# Target: OrbStack "isolated machine" (Ubuntu 26.04 LTS, arm64)
+#
+# Usage (from macOS, with the orb CLI):
+#   orb create -c cloud-init.yaml --isolated ubuntu:26.04 rails-ai
+#
+#   --isolated       disables host file sharing/integration (safe blast radius)
+#   DO NOT add --isolate-network: provisioning needs internet to pull mise,
+#   Ruby, Node, gems and Claude Code. Isolate the network AFTER first boot if
+#   you want a fully offline sandbox.
+#
+# First boot installs a precompiled Ruby (fast) plus packages and gems, so
+# provisioning still takes a few minutes. Track it:
+#   cat /etc/sandbox-status            # "provisioning" -> "ready"
+#   tail -f /var/log/sandbox-provision.log
+#   ls ~/.sandbox-ready                # exists when finished
+# =============================================================================
+
+package_update: true
+package_upgrade: false
+
+# APT packages. Everything here is a system-level dependency; language runtimes
+# (Ruby/Node) come from mise, per-user, in the provisioning script below.
+packages:
+  # --- build toolchain: needed for native gem extensions (pg, etc.) and as the
+  #     fallback if mise has no precompiled Ruby binary for the chosen version ---
+  - build-essential
+  - autoconf
+  - bison
+  - pkg-config
+  - libssl-dev
+  - libreadline-dev
+  - zlib1g-dev
+  - libyaml-dev
+  - libffi-dev
+  - libgmp-dev
+  - libncurses-dev
+  # --- database client/dev headers ---
+  - libpq-dev
+  - postgresql
+  - postgresql-contrib
+  - redis-server
+  - sqlite3
+  - libsqlite3-dev
+  # --- Active Storage / media processing ---
+  - libvips-tools
+  - ffmpeg
+  - poppler-utils
+  # --- core utilities ---
+  - git
+  - curl
+  - wget
+  - ca-certificates
+  - gnupg
+  - unzip
+  # --- developer CLIs (nice defaults for an AI-driven workflow) ---
+  - ripgrep
+  - fd-find
+  - bat
+  - fzf
+  - jq
+  - tmux
+  - htop
+  - tree
+  - direnv
+  - vim
+  - zsh
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: bake an Anthropic API key into the image so Claude Code is
+# authenticated immediately. Leave commented to instead log in interactively
+# with `claude` on first run (recommended: keeps secrets out of this file).
+# If you enable this, treat cloud-init.yaml itself as a secret.
+# provision.sh copies this into the dev user's ~/.config/claude/env on boot.
+# -----------------------------------------------------------------------------
+# write_files:
+#   - path: /etc/sandbox/claude-env
+#     permissions: '0600'
+#     content: |
+#       export ANTHROPIC_API_KEY=sk-ant-...
+
+write_files:
+  # MOTD cheat-sheet shown on every login.
+  - path: /etc/motd
+    permissions: '0644'
+    content: |
+
+      ┌──────────────────────────────────────────────────────────────┐
+      │  Rails + Claude Code sandbox (OrbStack isolated machine)       │
+      ├──────────────────────────────────────────────────────────────┤
+      │  Status : cat /etc/sandbox-status   (provisioning -> ready)    │
+      │  Log    : tail -f /var/log/sandbox-provision.log               │
+      │                                                                │
+      │  Toolchain : mise (ruby@latest, node@lts) · rails · bundler    │
+      │  Services  : postgresql + redis (systemctl status ...)         │
+      │                                                                │
+      │  Claude Code:                                                  │
+      │    claude          normal, asks for permission                 │
+      │    claude-yolo     --dangerously-skip-permissions              │
+      │    Auth: run `claude` to log in, OR put your key in            │
+      │          ~/.config/claude/env  (export ANTHROPIC_API_KEY=...)  │
+      │                                                                │
+      │  Postgres role = your username (superuser, trust auth, local). │
+      └──────────────────────────────────────────────────────────────┘
+
+  # All provisioning logic lives in one script for readability.
+  - path: /usr/local/sbin/provision.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      # Provisioning for the Rails + Claude Code sandbox. Runs once as root at
+      # first boot. Non-fatal: individual steps log and continue on failure so a
+      # single hiccup does not leave the box unusable.
+      set -uo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      # We run detached (systemd-run) so all output must go to the log file.
+      exec >> /var/log/sandbox-provision.log 2>&1
+
+      log() { echo "[$(date -u +%H:%M:%S)] $*"; }
+      echo "provisioning" > /etc/sandbox-status
+
+      # --- Wait for the real OrbStack user, ignoring the distro default ----------
+      # OrbStack first boots with a throwaway 'ubuntu' user, then -- concurrently
+      # with cloud-init -- runs `userdel -r ubuntu` and creates the real user
+      # (your macOS username). If we start ANY process as 'ubuntu', that userdel
+      # fails and OrbStack rolls the whole machine back. So we must skip default
+      # users and wait for the real one to appear. Override with SANDBOX_USER.
+      # Only distro cloud-image default users -- NOT names a real teammate might
+      # use (e.g. 'admin'/'user'), so we never skip an actual person's account.
+      DEFAULTS='ubuntu|debian|fedora|centos|almalinux|rocky|cloud-user|arch|alpine|opensuse|void|gentoo|kali|nixos|oracle'
+      TARGET_USER=""
+      for _ in $(seq 1 300); do           # poll up to ~10 min (we run detached)
+        if [ -n "${SANDBOX_USER:-}" ] && id "$SANDBOX_USER" >/dev/null 2>&1; then
+          TARGET_USER="$SANDBOX_USER"; break
+        fi
+        TARGET_USER=$(getent passwd \
+          | awk -F: '$6 ~ "^/home/" && $7 !~ /(nologin|false)$/ {print $1}' \
+          | grep -viE "^(${DEFAULTS})$" | head -1)
+        if [ -n "$TARGET_USER" ] && id "$TARGET_USER" >/dev/null 2>&1; then break; fi
+        TARGET_USER=""; sleep 2
+      done
+      if [ -z "$TARGET_USER" ]; then
+        log "FATAL: real OrbStack user never appeared (set SANDBOX_USER to override)"
+        echo "failed" > /etc/sandbox-status; exit 1
+      fi
+      TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+      log "Target user: $TARGET_USER (home: $TARGET_HOME)"
+
+      # OrbStack may create the home dir -- or a `--mount` target placed *under*
+      # it, e.g. ~/code/myapp -- as root before the user is finalized, leaving
+      # the user unable to write its own home (mise/dotfiles fail with EACCES).
+      # Repair ownership of the home top-level (and ~/code) NON-recursively, so a
+      # mounted project dir living underneath is never touched.
+      TARGET_GROUP=$(id -gn "$TARGET_USER")
+      for d in "$TARGET_HOME" "$TARGET_HOME/code"; do
+        if [ -d "$d" ] && [ "$(stat -c %U "$d")" != "$TARGET_USER" ]; then
+          chown "$TARGET_USER:$TARGET_GROUP" "$d" && log "Fixed ownership of $d"
+        fi
+      done
+
+      # --- Handy symlinks for Ubuntu's renamed binaries -------------------------
+      ln -sf "$(command -v fdfind)" /usr/local/bin/fd 2>/dev/null || true
+      ln -sf "$(command -v batcat)" /usr/local/bin/bat 2>/dev/null || true
+
+      # --- GitHub CLI (needs its own apt repo) ----------------------------------
+      log "Installing GitHub CLI (gh)..."
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list
+      apt-get update -qq && apt-get install -y gh || log "gh install failed (continuing)"
+
+      # --- Starship prompt (system-wide) ----------------------------------------
+      log "Installing starship..."
+      curl -fsSL https://starship.rs/install.sh | sh -s -- -y || log "starship install failed (continuing)"
+
+      # --- PostgreSQL: role for the dev user + trust auth for local dev ----------
+      log "Configuring PostgreSQL..."
+      systemctl enable --now postgresql || log "could not start postgresql"
+      if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$TARGET_USER'" | grep -q 1; then
+        log "Postgres role $TARGET_USER already exists"
+      else
+        sudo -u postgres psql -c "CREATE ROLE \"$TARGET_USER\" LOGIN SUPERUSER CREATEDB;" \
+          || log "could not create postgres role"
+      fi
+      PGHBA=$(sudo -u postgres psql -tA -c 'SHOW hba_file;' 2>/dev/null)
+      if [ -n "$PGHBA" ] && [ -f "$PGHBA" ]; then
+        sed -ri \
+          -e 's/^(local\s+all\s+all\s+)peer/\1trust/' \
+          -e 's/^(local\s+all\s+postgres\s+)peer/\1trust/' \
+          -e 's#^(host\s+all\s+all\s+127\.0\.0\.1/32\s+)\S+#\1trust#' \
+          -e 's#^(host\s+all\s+all\s+::1/128\s+)\S+#\1trust#' \
+          "$PGHBA"
+        systemctl reload postgresql || log "could not reload postgresql"
+      fi
+
+      # --- Redis ----------------------------------------------------------------
+      log "Enabling Redis..."
+      systemctl enable --now redis-server || log "could not start redis-server"
+
+      # --- Per-user setup (mise, Ruby, Node, gems, Claude Code, dotfiles) -------
+      cat > /tmp/user-setup.sh <<'USEREOF'
+      #!/usr/bin/env bash
+      set -uo pipefail
+      log() { echo "[$(date -u +%H:%M:%S)][user] $*"; }
+
+      # mise: single manager for Ruby + Node
+      if [ ! -x "$HOME/.local/bin/mise" ]; then
+        log "Installing mise..."
+        curl -fsSL https://mise.run | sh
+      fi
+      export PATH="$HOME/.local/bin:$PATH"
+      eval "$("$HOME/.local/bin/mise" activate bash)" || true
+
+      # Prefer precompiled Ruby (jdx/ruby: Linux arm64/x86_64, macOS arm64).
+      # This becomes mise's default in 2026.8.0; we opt in now so first boot
+      # fetches a binary in seconds instead of compiling for minutes. mise falls
+      # back to ruby-build (source) only if no binary exists for the version --
+      # which is why the build toolchain above is still installed.
+      export MISE_RUBY_COMPILE=0
+      "$HOME/.local/bin/mise" settings set ruby.compile false 2>/dev/null || true
+      log "Installing Ruby (latest) + Node (lts) via mise (precompiled where available)..."
+      "$HOME/.local/bin/mise" use -g ruby@latest node@lts
+
+      # Skip local rdoc/ri generation for faster gem installs
+      printf 'gem: --no-document\n' > "$HOME/.gemrc"
+
+      log "Installing rails, bundler, foreman..."
+      "$HOME/.local/bin/mise" exec -- gem install rails bundler foreman || log "gem install failed"
+
+      # Claude Code (native installer -- self-updating, no Node dependency).
+      # Alternative: mise exec -- npm install -g @anthropic-ai/claude-code
+      log "Installing Claude Code..."
+      curl -fsSL https://claude.ai/install.sh | bash || log "Claude Code install failed"
+
+      # Placeholder for API-key auth (sourced by shell rc below if present)
+      mkdir -p "$HOME/.config/claude"
+      if [ ! -f "$HOME/.config/claude/env" ]; then
+        cat > "$HOME/.config/claude/env.example" <<'ENVEOF'
+      # Rename this file to `env` and uncomment to auth Claude Code with a key
+      # instead of interactive login:
+      # export ANTHROPIC_API_KEY=sk-ant-...
+      ENVEOF
+      fi
+
+      # Sensible git defaults (name/email left for you to set)
+      git config --global init.defaultBranch main
+      git config --global push.autoSetupRemote true
+
+      # --- Shell rc: wire up mise, starship, direnv, aliases (idempotent) -------
+      for rc in .bashrc .zshrc; do
+        shell="${rc#.}"; shell="${shell%rc}"          # .bashrc->bash, .zshrc->zsh
+        rcfile="$HOME/$rc"
+        touch "$rcfile"
+        if ! grep -q 'Rails AI sandbox' "$rcfile" 2>/dev/null; then
+          cat >> "$rcfile" <<RCEOF
+
+      # --- Rails AI sandbox ---
+      export PATH="\$HOME/.local/bin:\$PATH"
+      command -v mise >/dev/null && eval "\$(mise activate $shell)"
+      command -v starship >/dev/null && eval "\$(starship init $shell)"
+      command -v direnv >/dev/null && eval "\$(direnv hook $shell)"
+      [ -f "\$HOME/.config/claude/env" ] && source "\$HOME/.config/claude/env"
+      alias claude-yolo='claude --dangerously-skip-permissions'
+      # --- end Rails AI sandbox ---
+      RCEOF
+        fi
+      done
+
+      mkdir -p "$HOME/code"
+      touch "$HOME/.sandbox-ready"
+      log "User setup complete."
+      USEREOF
+
+      chmod +x /tmp/user-setup.sh
+      log "Running per-user setup as $TARGET_USER (this is the long part)..."
+      runuser -l "$TARGET_USER" -c "bash /tmp/user-setup.sh" || log "user setup reported errors"
+
+      # --- Install baked-in API key, if the optional write_files block was used --
+      if [ -f /etc/sandbox/claude-env ]; then
+        install -o "$TARGET_USER" -g "$TARGET_USER" -m 0700 -d "$TARGET_HOME/.config/claude"
+        install -o "$TARGET_USER" -g "$TARGET_USER" -m 0600 \
+          /etc/sandbox/claude-env "$TARGET_HOME/.config/claude/env"
+        log "Installed baked-in Anthropic API key for $TARGET_USER"
+      fi
+
+      # --- Default shell -> zsh for the dev user --------------------------------
+      chsh -s "$(command -v zsh)" "$TARGET_USER" || log "could not change shell to zsh"
+
+      echo "ready" > /etc/sandbox-status
+      log "Provisioning complete. Sandbox is ready."
+
+runcmd:
+  # Launch provisioning as a detached transient unit. OrbStack creates the real
+  # user around the time `orb create` returns -- often just after cloud-init's
+  # runcmd stage -- so provisioning must survive past cloud-init and wait for the
+  # user itself, instead of blocking (or timing out) this synchronous stage.
+  - [ bash, -c, "systemd-run --collect --unit=rails-sandbox-provision --description='Rails sandbox provisioning' /usr/local/sbin/provision.sh" ]
