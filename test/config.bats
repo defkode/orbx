@@ -25,3 +25,32 @@ load helpers/test_helper
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "effective config: defaults when no files exist" {
+  orbx_source
+  cd "$PROJECT_DIR"
+  run orbx::effective_config
+  [[ "$output" == *"template=default"* ]]
+  [[ "$output" == *"image=ubuntu:26.04"* ]]
+  [[ "$output" == *"mount=true"* ]]
+}
+
+@test "effective config: project overrides global overrides default" {
+  orbx_source
+  mkdir -p "$HOME/.orbx"
+  printf '%s\n' 'template=globaltpl' 'image=ubuntu:24.04' > "$HOME/.orbx/config"
+  cd "$PROJECT_DIR"
+  printf '%s\n' 'template=projtpl' > "$PROJECT_DIR/.orbxrc"
+  run orbx::effective_config
+  [[ "$output" == *"template=projtpl"* ]]     # project wins
+  [[ "$output" == *"image=ubuntu:24.04"* ]]   # global wins over default
+}
+
+@test "effective config: unknown keys are preserved" {
+  orbx_source
+  mkdir -p "$HOME/.orbx"
+  printf '%s\n' 'future_key=xyz' > "$HOME/.orbx/config"
+  cd "$PROJECT_DIR"
+  run orbx::effective_config
+  [[ "$output" == *"future_key=xyz"* ]]
+}

@@ -55,6 +55,19 @@ orbx::parse_config_file() {
   done < "$file"
 }
 
+orbx::effective_config() {
+  declare -A cfg=( [template]=default [image]=ubuntu:26.04 [arch]= [mount]=true )
+  local src k v
+  for src in "${ORBX_GLOBAL_CONFIG:-$HOME/.orbx/config}" "$PWD/.orbxrc"; do
+    while IFS='=' read -r k v; do
+      [[ -n "$k" ]] && cfg["$k"]="$v"
+    done < <(orbx::parse_config_file "$src")
+  done
+  for k in "${!cfg[@]}"; do
+    printf '%s=%s\n' "$k" "${cfg[$k]}"
+  done | sort
+}
+
 orbx::main() {
   case "${1:-}" in
     --version) orbx::version ;;
