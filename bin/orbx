@@ -141,7 +141,7 @@ orbx::resolve_context() {
 
   # Assemble the mount list: auto $PWD mount (unless disabled) + explicit --mount.
   ORBX_MOUNTS=()
-  [[ "$ORBX_MOUNT_ON" == "true" ]] && ORBX_MOUNTS+=("$(orbx::mount_spec)")
+  [[ "$ORBX_MOUNT_ON" == "true" ]] && ORBX_MOUNTS+=("$(orbx::mount_spec "$PWD")")
   local m
   if (( ${#ORBX_FLAG_MOUNTS[@]} )); then
     for m in "${ORBX_FLAG_MOUNTS[@]}"; do
