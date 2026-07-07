@@ -27,3 +27,15 @@ load helpers/test_helper
   [[ "$output" == *"ubuntu:26.04 custom"* ]]
   [[ "$output" != *"--mount"* ]]
 }
+
+@test "up --dry-run adds an explicit --mount alongside the auto \$PWD mount" {
+  orbx_source
+  mkdir -p "$HOME/.orbx/templates"
+  touch "$HOME/.orbx/templates/default.yaml"
+  export USER=tomasz
+  cd "$PROJECT_DIR"
+  run orbx_run up --dry-run --mount /host/data:/vm/data
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--mount $PROJECT_DIR:/home/tomasz/code/korelo"* ]]
+  [[ "$output" == *"--mount /host/data:/vm/data"* ]]
+}

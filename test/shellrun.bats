@@ -26,7 +26,7 @@ setup_ready_machine() {
   run orbx_run
   [ "$status" -eq 0 ]
   # shell invocation targets the machine
-  grep -q -- "-m korelo" "$ORB_STUB_LOG"
+  grep -qF 'exec "$SHELL"' "$ORB_STUB_LOG"
 }
 
 @test "run forwards flags after -- verbatim" {

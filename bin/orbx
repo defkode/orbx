@@ -144,9 +144,11 @@ orbx::resolve_context() {
   ORBX_MOUNTS=()
   [[ "$ORBX_MOUNT_ON" == "true" ]] && ORBX_MOUNTS+=("$(orbx::mount_spec)")
   local m
-  for m in "${ORBX_FLAG_MOUNTS[@]}"; do
-    [[ -n "$m" ]] && ORBX_MOUNTS+=("$m")
-  done
+  if (( ${#ORBX_FLAG_MOUNTS[@]} )); then
+    for m in "${ORBX_FLAG_MOUNTS[@]}"; do
+      [[ -n "$m" ]] && ORBX_MOUNTS+=("$m")
+    done
+  fi
 }
 
 orbx::build_create_cmd() {
@@ -286,7 +288,7 @@ orbx::cmd_down() {
   if [[ "$ORBX_YES" != "1" ]]; then
     [[ -t 0 ]] || orbx::die "refusing to delete non-interactively; pass --yes"
     printf 'Delete sandbox %q? Data inside the VM is lost (your folder is safe). [y/N] ' "$ORBX_NAME" >&2
-    local ans; read -r ans
+    local ans; read -r ans || ans=""
     [[ "$ans" == [yY]* ]] || { printf 'aborted\n' >&2; return 1; }
   fi
   orb delete -f "$ORBX_NAME"

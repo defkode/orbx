@@ -55,3 +55,16 @@ load helpers/test_helper
   grep -q "^start korelo" "$ORB_STUB_LOG"
   ! grep -q "create -c" "$ORB_STUB_LOG"
 }
+
+@test "up exits non-zero when provisioning fails" {
+  orbx_source
+  : > "$ORBX_TMP/list"
+  export ORB_STUB_LIST_FIXTURE="$ORBX_TMP/list"
+  printf '%s ' provisioning failed > "$ORBX_TMP/seq"
+  export ORB_STUB_STATUS_SEQ="$ORBX_TMP/seq"
+  mkdir -p "$HOME/.orbx/templates"; touch "$HOME/.orbx/templates/default.yaml"
+  cd "$PROJECT_DIR"
+  run orbx_run up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"orbx logs"* ]]
+}
