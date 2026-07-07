@@ -281,6 +281,20 @@ write_files:
       log "Running per-user setup as $TARGET_USER (this is the long part)..."
       runuser -l "$TARGET_USER" -c "bash /tmp/user-setup.sh" || log "user setup reported errors"
 
+      # --- Toolchain on PATH for NON-interactive login shells --------------------
+      # Interactive shells get mise/starship via the rc files above, but a
+      # non-interactive `bash -lc` (used by `orbx run <cmd>`) does not source them.
+      # Expose the mise shims + ~/.local/bin system-wide so ruby/node/bundle/rails/
+      # claude resolve there too. Content is static; $HOME resolves per-user at login.
+      cat > /etc/profile.d/mise-shims.sh <<'PROFILEEOF'
+      if [ -n "${HOME:-}" ]; then
+        case ":${PATH}:" in
+          *":${HOME}/.local/share/mise/shims:"*) ;;
+          *) PATH="${HOME}/.local/share/mise/shims:${HOME}/.local/bin:${PATH}"; export PATH ;;
+        esac
+      fi
+      PROFILEEOF
+
       # --- Install baked-in API key, if the optional write_files block was used --
       if [ -f /etc/sandbox/claude-env ]; then
         install -o "$TARGET_USER" -g "$TARGET_USER" -m 0700 -d "$TARGET_HOME/.config/claude"
