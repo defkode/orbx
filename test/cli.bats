@@ -3,7 +3,7 @@ load helpers/test_helper
 @test "--version prints the version" {
   run orbx_run --version
   [ "$status" -eq 0 ]
-  [[ "$output" == "orbx 0.1.2" ]]
+  [[ "$output" == "orbx 0.1.3" ]]
 }
 
 @test "unknown command exits non-zero" {
