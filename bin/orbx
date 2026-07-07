@@ -277,6 +277,46 @@ orbx::cmd_run() {
   orb -m "$ORBX_NAME" bash -lc 'cd "$1" && shift && exec "$@"' _ "$(orbx::mount_target)" "$@"
 }
 
+orbx::cmd_stop()  { orbx::resolve_context; orb stop  "$ORBX_NAME"; }
+orbx::cmd_list()  { orb list; }
+orbx::cmd_logs()  { orbx::resolve_context; orb -m "$ORBX_NAME" tail -f /var/log/sandbox-provision.log; }
+
+orbx::cmd_down() {
+  orbx::resolve_context
+  if [[ "$ORBX_YES" != "1" ]]; then
+    [[ -t 0 ]] || orbx::die "refusing to delete non-interactively; pass --yes"
+    printf 'Delete sandbox %q? Data inside the VM is lost (your folder is safe). [y/N] ' "$ORBX_NAME" >&2
+    local ans; read -r ans
+    [[ "$ans" == [yY]* ]] || { printf 'aborted\n' >&2; return 1; }
+  fi
+  orb delete -f "$ORBX_NAME"
+}
+
+# Extract a flat JSON string field without a jq dependency.
+orbx::json_field() {
+  sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -1
+}
+
+orbx::cmd_ip() {
+  orbx::resolve_context
+  local ip; ip="$(orb info "$ORBX_NAME" -f json | orbx::json_field ip || true)"
+  [[ -n "$ip" ]] || orbx::die "could not determine IP for $ORBX_NAME"
+  printf '%s\n' "$ip"
+}
+
+orbx::cmd_status() {
+  orbx::resolve_context
+  local state="absent" prov="-" ip="-"
+  if orbx::machine_exists "$ORBX_NAME"; then
+    state="stopped"; orbx::machine_running "$ORBX_NAME" && state="running"
+    prov="$(orb -m "$ORBX_NAME" -u root cat /etc/sandbox-status 2>/dev/null || echo unknown)"
+    ip="$(orb info "$ORBX_NAME" -f json 2>/dev/null | orbx::json_field ip || true)"
+    [[ -n "$ip" ]] || ip="-"
+  fi
+  printf '%s\t%s\tprovisioning: %s\tip: %s\ttemplate: %s\tmount: %s\n' \
+    "$ORBX_NAME" "$state" "$prov" "$ip" "$ORBX_TEMPLATE" "$(orbx::mount_target)"
+}
+
 # Run main only when executed directly; do nothing when sourced (tests).
 # (Unit tests run under bats' bash, which must also be >= 4 — see Task 1 Step 2.)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
