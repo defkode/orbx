@@ -226,6 +226,9 @@ orbx::cmd_up() {
   orbx::ensure_up   # implemented in Task 10
 }
 
+orbx::machine_exists()  { orb list -q        | grep -Fxq -- "$1"; }
+orbx::machine_running() { orb list -r -q     | grep -Fxq -- "$1"; }
+
 # Run main only when executed directly; do nothing when sourced (tests).
 # (Unit tests run under bats' bash, which must also be >= 4 — see Task 1 Step 2.)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
