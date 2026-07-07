@@ -39,7 +39,7 @@ ready_ctx() {
 
 @test "ip extracts the address from orb info json" {
   orbx_source; ready_ctx
-  printf '%s\n' '{"name":"korelo","ip":"10.0.1.42"}' > "$ORBX_TMP/info"
+  printf '%s\n' '{"name":"korelo","ip4":"10.0.1.42"}' > "$ORBX_TMP/info"
   export ORB_STUB_INFO_FIXTURE="$ORBX_TMP/info"
   run orbx_run ip
   [ "$status" -eq 0 ]
@@ -49,7 +49,7 @@ ready_ctx() {
 @test "status shows state, provisioning, and ip" {
   orbx_source; ready_ctx
   printf '%s ' ready > "$ORBX_TMP/seq"; export ORB_STUB_STATUS_SEQ="$ORBX_TMP/seq"
-  printf '%s\n' '{"name":"korelo","ip":"10.0.1.42"}' > "$ORBX_TMP/info"
+  printf '%s\n' '{"name":"korelo","ip4":"10.0.1.42"}' > "$ORBX_TMP/info"
   export ORB_STUB_INFO_FIXTURE="$ORBX_TMP/info"
   run orbx_run status
   [ "$status" -eq 0 ]

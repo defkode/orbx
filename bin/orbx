@@ -351,7 +351,7 @@ orbx::json_field() {
 
 orbx::cmd_ip() {
   orbx::resolve_context
-  local ip; ip="$(orb info "$ORBX_NAME" -f json | orbx::json_field ip || true)"
+  local ip; ip="$(orb info "$ORBX_NAME" -f json | orbx::json_field ip4 || true)"
   [[ -n "$ip" ]] || orbx::die "could not determine IP for $ORBX_NAME"
   printf '%s\n' "$ip"
 }
@@ -362,7 +362,7 @@ orbx::cmd_status() {
   if orbx::machine_exists "$ORBX_NAME"; then
     state="stopped"; orbx::machine_running "$ORBX_NAME" && state="running"
     prov="$(orb -m "$ORBX_NAME" -u root cat /etc/sandbox-status 2>/dev/null || echo unknown)"
-    ip="$(orb info "$ORBX_NAME" -f json 2>/dev/null | orbx::json_field ip || true)"
+    ip="$(orb info "$ORBX_NAME" -f json 2>/dev/null | orbx::json_field ip4 || true)"
     [[ -n "$ip" ]] || ip="-"
   fi
   printf '%s\t%s\tprovisioning: %s\tip: %s\ttemplate: %s\tmount: %s\n' \
