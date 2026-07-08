@@ -192,7 +192,7 @@ orbx::require_orb() {
 
 orbx::usage() {
   cat <<'EOF'
-orbx — per-project OrbStack Rails + Claude Code sandboxes
+orbx — per-project OrbStack Rails sandboxes (Claude Code + Copilot)
 
 USAGE
   orbx [command] [flags]

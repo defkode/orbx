@@ -1,6 +1,6 @@
 #cloud-config
 # =============================================================================
-# Ruby on Rails + Claude Code development sandbox
+# Ruby on Rails + AI coding agents (Claude Code + Copilot CLI) sandbox
 # Target: OrbStack "isolated machine" (Ubuntu 26.04 LTS, arm64)
 #
 # Usage (from macOS, with the orb CLI):
@@ -8,8 +8,8 @@
 #
 #   --isolated       disables host file sharing/integration (safe blast radius)
 #   DO NOT add --isolate-network: provisioning needs internet to pull mise,
-#   Ruby, Node, gems and Claude Code. Isolate the network AFTER first boot if
-#   you want a fully offline sandbox.
+#   Ruby, Node, gems, Claude Code and Copilot. Isolate the network AFTER first
+#   boot if you want a fully offline sandbox.
 #
 # First boot installs a precompiled Ruby (fast) plus packages and gems, so
 # provisioning still takes a few minutes. Track it:
@@ -88,7 +88,7 @@ write_files:
     content: |
 
       ┌──────────────────────────────────────────────────────────────┐
-      │  Rails + Claude Code sandbox (OrbStack isolated machine)       │
+      │  Rails sandbox — Claude Code + Copilot CLI (OrbStack isolated) │
       ├──────────────────────────────────────────────────────────────┤
       │  Status : cat /etc/sandbox-status   (provisioning -> ready)    │
       │  Log    : tail -f /var/log/sandbox-provision.log               │
@@ -166,7 +166,7 @@ write_files:
     permissions: '0755'
     content: |
       #!/usr/bin/env bash
-      # Provisioning for the Rails + Claude Code sandbox. Runs once as root at
+      # Provisioning for the Rails + AI-agents sandbox. Runs once as root at
       # first boot. Non-fatal: individual steps log and continue on failure so a
       # single hiccup does not leave the box unusable.
       set -uo pipefail
@@ -259,7 +259,7 @@ write_files:
       log "Enabling Redis..."
       systemctl enable --now redis-server || log "could not start redis-server"
 
-      # --- Per-user setup (mise, Ruby, Node, gems, Claude Code, dotfiles) -------
+      # --- Per-user setup (mise, Ruby, Node, gems, Claude Code, Copilot, dotfiles)
       cat > /tmp/user-setup.sh <<'USEREOF'
       #!/usr/bin/env bash
       set -uo pipefail

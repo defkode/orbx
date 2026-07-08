@@ -6,9 +6,10 @@ machine name from the current folder, mounts `$PWD` into it at the matching
 path, provisions it from a template (a cloud-init file), waits until it's
 ready, and drops you into a shell.
 
-The tool is template-agnostic: the bundled `default` template is a Rails +
-Claude Code sandbox, but naming, mounting, lifecycle, and `--dry-run` work with
-any cloud-init template you point it at.
+The tool is template-agnostic: the bundled `default` template is a Rails
+sandbox with Claude Code and GitHub Copilot CLI preinstalled, but naming,
+mounting, lifecycle, and `--dry-run` work with any cloud-init template you
+point it at.
 
 ## Install
 
@@ -32,7 +33,7 @@ provisioning only happens once.
 The output of `orbx --help`:
 
 ```
-orbx — per-project OrbStack Rails + Claude Code sandboxes
+orbx — per-project OrbStack Rails sandboxes (Claude Code + Copilot)
 
 USAGE
   orbx [command] [flags]
