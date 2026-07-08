@@ -310,6 +310,22 @@ write_files:
       git config --global init.defaultBranch main
       git config --global push.autoSetupRemote true
 
+      # Popular aliases: git st, git co, git lg, git last, ...
+      git config --global alias.st status
+      git config --global alias.co checkout
+      git config --global alias.sw switch
+      git config --global alias.br branch
+      git config --global alias.ci commit
+      git config --global alias.cm 'commit -m'
+      git config --global alias.aa 'add --all'
+      git config --global alias.amend 'commit --amend'
+      git config --global alias.unstage 'reset HEAD --'
+      git config --global alias.uncommit 'reset --soft HEAD~1'
+      git config --global alias.last 'log -1 HEAD'
+      git config --global alias.df diff
+      git config --global alias.dc 'diff --cached'
+      git config --global alias.lg 'log --graph --oneline --decorate --all'
+
       # --- Shell rc: wire up mise, starship, direnv, aliases (idempotent) -------
       for rc in .bashrc .zshrc; do
         shell="${rc#.}"; shell="${shell%rc}"          # .bashrc->bash, .zshrc->zsh
