@@ -102,6 +102,11 @@ write_files:
       │    Auth: run `claude` to log in, OR put your key in            │
       │          ~/.config/claude/env  (export ANTHROPIC_API_KEY=...)  │
       │                                                                │
+      │  GitHub Copilot CLI:                                           │
+      │    copilot         agentic coding agent (needs Copilot sub)    │
+      │    copilot-yolo    --allow-all-tools                           │
+      │    Auth: run `copilot`, then /login (your GitHub account)      │
+      │                                                                │
       │  Postgres role = your username (superuser, trust auth, local). │
       └──────────────────────────────────────────────────────────────┘
 
@@ -289,6 +294,13 @@ write_files:
       log "Installing Claude Code..."
       curl -fsSL https://claude.ai/install.sh | bash || log "Claude Code install failed"
 
+      # GitHub Copilot CLI (agentic coding agent in the terminal). Native
+      # installer -- drops a standalone binary into ~/.local/bin (already on
+      # PATH), no Node dependency. Mirrors the Claude Code install above.
+      # Alternative: mise exec -- npm install -g @github/copilot (needs Node 22+).
+      log "Installing GitHub Copilot CLI..."
+      curl -fsSL https://gh.io/copilot-install | bash || log "Copilot CLI install failed"
+
       # Placeholder for API-key auth (sourced by shell rc below if present)
       mkdir -p "$HOME/.config/claude"
       if [ ! -f "$HOME/.config/claude/env" ]; then
@@ -341,6 +353,7 @@ write_files:
       command -v direnv >/dev/null && eval "\$(direnv hook $shell)"
       [ -f "\$HOME/.config/claude/env" ] && source "\$HOME/.config/claude/env"
       alias claude-yolo='claude --dangerously-skip-permissions'
+      alias copilot-yolo='copilot --allow-all-tools'
       # --- end Rails AI sandbox ---
       RCEOF
         fi
