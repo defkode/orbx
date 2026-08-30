@@ -42,12 +42,17 @@ line-by-line (`orbx::parse_config_file`) and **never `source`d or `eval`'d** —
 config file can't execute code. Keep it that way. Values can't contain `#`
 (everything after `#` is a comment).
 
-**Template resolution.** Templates are cloud-init YAML resolved by name through a
-search path (`orbx::resolve_template`): `$ORBX_TEMPLATE_DIR` → `~/.orbx/templates`
-→ bundled dir → `<script>/../templates`. A user file shadows the bundled one of
-the same name. `ORBX_BUNDLED_TEMPLATE_DIR` is the literal `@TEMPLATE_DIR@`
-placeholder in-repo; the Homebrew formula rewrites it at install time (unstamped
-in a git checkout, which is why the `<script>/../templates` fallback exists).
+**Template resolution.** Templates are cloud-init YAML. A *bare name* is resolved
+through a search path (`orbx::resolve_template`): `$ORBX_TEMPLATE_DIR` →
+`~/.orbx/templates` → bundled dir → `<script>/../templates`. A user file shadows
+the bundled one of the same name. A *path-shaped* value — one with an explicit
+`./`, `../`, `/` or `~/` prefix, or a `.yaml`/`.yml` extension — skips the search
+path entirely and is used as given, resolved against `$PWD` (the same anchor as
+`./.orbxrc`). That is what lets a repo commit its own template alongside its
+config; the two forms are disjoint, so a bare name never changes meaning.
+`ORBX_BUNDLED_TEMPLATE_DIR` is the literal `@TEMPLATE_DIR@` placeholder in-repo;
+the Homebrew formula rewrites it at install time (unstamped in a git checkout,
+which is why the `<script>/../templates` fallback exists).
 
 **Machine lifecycle** wraps the `orb` CLI. `ensure_up` creates (via the assembled
 `ORBX_CREATE_CMD` = `orb create -c <template> --isolated ...`) or starts the

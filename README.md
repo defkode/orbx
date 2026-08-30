@@ -107,12 +107,36 @@ Run `orbx init` to scaffold a starter `./.orbxrc` (`--force` to overwrite), and
 
 ## Templates
 
-Templates are cloud-init files resolved by name. `orbx` looks in, in order:
-`~/.orbx/templates/<name>.yaml` (yours), then the bundled templates that ship
-with the tool. A user template of the same name shadows the bundled one — so
-dropping `~/.orbx/templates/default.yaml` customizes the default without
-forking `orbx`. Run `orbx templates` to see what's available and which one a
-project resolves to.
+Templates are cloud-init files. Give `template` a **name** and `orbx` looks in,
+in order: `~/.orbx/templates/<name>.yaml` (yours), then the bundled templates
+that ship with the tool. A user template of the same name shadows the bundled
+one — so dropping `~/.orbx/templates/default.yaml` customizes the default
+without forking `orbx`. Run `orbx templates` to see what's available and which
+one a project resolves to.
+
+### Project-local templates
+
+Give `template` a **path** instead and the repo carries its own provisioning —
+no per-machine setup, nothing to copy into `~/.orbx/templates`:
+
+```ini
+# ./.orbxrc — committed
+template = .orbx/rails-e2e.yaml
+```
+
+Commit `.orbx/rails-e2e.yaml` next to it and everyone who clones gets the same
+machine. Relative paths resolve against the directory holding `.orbxrc`;
+absolute and `~/` paths work too. A value counts as a path when it has a `./`,
+`../`, `/` or `~/` prefix or a `.yaml`/`.yml` extension — so bare names keep
+their existing meaning. The same works as a one-off flag:
+
+```sh
+orbx up --template ./experiment.yaml
+```
+
+> A committed template is provisioning code: `orbx up` runs it as root inside
+> the VM. Review it as you would any other script in a repo you clone. The
+> machine is `--isolated`, but it does mount the project directory.
 
 ## Requirements
 
