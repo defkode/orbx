@@ -391,6 +391,22 @@ write_files:
       export PATH="$HOME/.local/bin:$PATH"
       eval "$("$HOME/.local/bin/mise" activate bash)" || true
 
+      # Trust project configs living under this user's home. mise refuses to
+      # load a mise.toml it has not been told to trust -- so the mounted
+      # project's pinned Ruby/Node/env silently do not apply, and the only clue
+      # is a WARN on every prompt telling a human to run `mise trust`. Nobody
+      # can: `orbx shell` lands in the project on a machine that exists solely
+      # to run it, and agents driving `orbx run` never see the warning at all.
+      #
+      # Scoped to $HOME rather than the mount path (which this template does not
+      # know) -- the auto-mount always lands under it, see orbx::mount_target,
+      # and a repo cloned inside the sandbox is covered too. What trust gates is
+      # code execution from a config file; this is an isolated VM whose entire
+      # purpose is executing that project's code, so there is nothing left to
+      # protect. Trust is a HOST-side boundary; it does not survive the mount.
+      "$HOME/.local/bin/mise" settings set trusted_config_paths "$HOME" \
+        || log "could not set mise trusted_config_paths (expect trust warnings)"
+
       # Prefer precompiled Ruby (jdx/ruby: Linux arm64/x86_64, macOS arm64).
       # This becomes mise's default in 2026.8.0; we opt in now so first boot
       # fetches a binary in seconds instead of compiling for minutes. mise falls
