@@ -115,3 +115,32 @@ load helpers/test_helper
   [ "$status" -eq 0 ]
   [[ "$output" == *"orb create -c $PROJECT_DIR/.orbx/rails.yaml --isolated"* ]]
 }
+
+# --- bundled default template: non-interactive hardening (issue #3) ----------
+# Agents drive this template from a shell they cannot type into. A git
+# credential prompt does not fail there, it hangs until the session is killed.
+
+@test "default template disables git terminal prompts in login shells" {
+  run grep -E "^\s+export GIT_TERMINAL_PROMPT=0$" \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "default template disables git terminal prompts in non-login shells too" {
+  # /etc/profile.d is not sourced by a bare `orb -m <name> bash -c ...`;
+  # /etc/environment is. Appended, because PATH already lives in that file.
+  run grep -A2 -E "^\s+- path: /etc/environment$" \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"append: true"* ]]
+  [[ "$output" != *"permissions"* ]]   # would mean a replace, wiping PATH
+
+  run grep -E "^\s+GIT_TERMINAL_PROMPT=0$" "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "default template installs patch explicitly" {
+  # git only Recommends patch; don't depend on apt keeping recommends on.
+  run grep -E "^\s+- patch$" "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
