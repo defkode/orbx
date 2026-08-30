@@ -144,3 +144,54 @@ load helpers/test_helper
   run grep -E "^\s+- patch$" "$ORBX_TEST_ROOT/templates/default.yaml"
   [ "$status" -eq 0 ]
 }
+
+@test "default template ships the per-run inspection tools" {
+  # Each of these fails confusingly rather than cleanly when absent: no `dig`
+  # to check a hostname, no `lsof -i` to find what holds a port, no `sponge`
+  # to rewrite a file mid-pipeline.
+  for pkg in lsof bind9-dnsutils rsync zip file moreutils; do
+    run grep -E "^\s+- ${pkg}$" "$ORBX_TEST_ROOT/templates/default.yaml"
+    [ "$status" -eq 0 ] || { echo "missing package: $pkg"; return 1; }
+  done
+
+  # Never the bare `dnsutils`: it is virtual on 26.04, and cloud-init drops
+  # names APT cannot resolve directly -- then fails the whole package stage.
+  run grep -E "^\s+- dnsutils$" "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -ne 0 ]
+}
+
+@test "default template gets python from mise, not apt" {
+  # Ubuntu's python3 is PEP 668-marked: apt's python3-pip installs a pip that
+  # refuses to install anything outside a venv. mise's precompiled Python
+  # ships a pip that works.
+  run grep -E "^\s+- python3-(pip|venv)$" "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -ne 0 ]
+
+  run grep -E 'mise" use -g .*python@latest' "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "default template keeps agent tooling off the ruby/node mise line" {
+  # A failed shellcheck download must not take Ruby and Node down with it.
+  run grep -E 'mise" use -g ruby@latest node@lts$' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "default template registers git-lfs filters, not just the binary" {
+  # Installing git-lfs is not enough: until `git lfs install` writes the
+  # clean/smudge filters, cloning an LFS repo silently yields pointer files.
+  run grep -E 'mise" use -g .*git-lfs' "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+
+  run grep -E 'git lfs install' "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "default template does not ask apt for postgresql-contrib" {
+  # No candidate on 26.04: cloud-init drops names APT cannot resolve and then
+  # fails the entire package stage. The contrib extensions ship in the server
+  # package regardless.
+  run grep -E "^\s+- postgresql-contrib$" "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -ne 0 ]
+}

@@ -38,9 +38,13 @@ packages:
   - libgmp-dev
   - libncurses-dev
   # --- database client/dev headers ---
+  # No postgresql-contrib: it has no candidate on 26.04, so cloud-init dropped
+  # it from the install list and failed the whole package stage over it. The
+  # extensions are in the server package anyway -- hstore, pg_trgm, citext,
+  # uuid-ossp and pg_stat_statements are all in pg_available_extensions without
+  # it (verified on a live machine).
   - libpq-dev
   - postgresql
-  - postgresql-contrib
   - redis-server
   - sqlite3
   - libsqlite3-dev
@@ -55,15 +59,33 @@ packages:
   - ca-certificates
   - gnupg
   - unzip
+  - zip
+  - rsync
+  # `file` is how you check whether something is text before catting it.
+  - file
   # git only *Recommends* patch, so it arrives by accident today; agents apply
   # diffs constantly, so ask for it by name.
   - patch
+  # --- inspecting a running box ---
+  # "what is holding port 3000" and "does this hostname resolve" are per-run
+  # questions. iproute2's `ss` covers the first, but `lsof -i` is what gets
+  # reached for first, and nothing else here provides `dig`.
+  #
+  # bind9-dnsutils, NOT dnsutils: on 26.04 `dnsutils` is a pure virtual name.
+  # `apt-get install dnsutils` resolves it to this package, but cloud-init
+  # pre-checks each name against APT and silently drops the ones it cannot
+  # resolve -- then fails the whole package stage. Name the real package.
+  - lsof
+  - bind9-dnsutils
   # --- developer CLIs (nice defaults for an AI-driven workflow) ---
   - ripgrep
   - fd-find
   - bat
   - fzf
   - jq
+  # moreutils, for `sponge`: `jq '...' f | sponge f` rewrites a file in place,
+  # where a plain `> f` redirect truncates it before jq has read it.
+  - moreutils
   - tmux
   - htop
   - tree
@@ -126,7 +148,7 @@ write_files:
       │  Status : cat /etc/sandbox-status   (provisioning -> ready)    │
       │  Log    : tail -f /var/log/sandbox-provision.log               │
       │                                                                │
-      │  Toolchain : mise (ruby@latest, node@lts) · rails · bundler    │
+      │  Toolchain : mise (ruby, node, python, uv) · rails · bundler   │
       │  Services  : postgresql + redis (systemctl status ...)         │
       │                                                                │
       │  Claude Code:                                                  │
@@ -321,6 +343,24 @@ write_files:
 
       log "Installing rails, bundler, foreman..."
       "$HOME/.local/bin/mise" exec -- gem install rails bundler foreman || log "gem install failed"
+
+      # Tooling that isn't a language runtime, on its own `mise use` line so a
+      # failed download here can never cost us the Ruby/Node install above.
+      #   python  Ubuntu's python3 has no pip and no working venv, and apt's
+      #           python3-pip is PEP 668-marked -- `pip install` then refuses to
+      #           run at all outside a venv. mise ships a precompiled Python
+      #           (seconds, not minutes) whose pip just works.
+      #   uv      venvs, script runners, and `uv tool install` -- covers what
+      #           pipx does, which costs 50 apt packages.
+      log "Installing python + agent tooling via mise..."
+      "$HOME/.local/bin/mise" use -g python@latest git-lfs shellcheck uv \
+        || log "mise tool install failed (continuing)"
+
+      # git-lfs is inert until its filters are registered: without this, cloning
+      # an LFS repo silently yields pointer files rather than content, and
+      # nothing errors to say so.
+      "$HOME/.local/bin/mise" exec -- git lfs install --skip-repo \
+        || log "git lfs install failed"
 
       # Claude Code (native installer -- self-updating, no Node dependency).
       # Alternative: mise exec -- npm install -g @anthropic-ai/claude-code
