@@ -165,6 +165,69 @@ write_files:
       │  Postgres role = your username (superuser, trust auth, local). │
       └──────────────────────────────────────────────────────────────┘
 
+  # Machine-level agent instructions. Seeded into BOTH agents' home-directory
+  # instruction paths by user-setup.sh below, from this single source.
+  #
+  # Those paths are a contract with each vendor, not a convention we picked:
+  #   Claude Code  ~/.claude/CLAUDE.md
+  #   Copilot CLI  ~/.copilot/copilot-instructions.md
+  # If either ever moves, this fails SILENTLY -- provisioning still succeeds and
+  # agents simply go back to guessing. There is no error to catch.
+  #
+  # Machine facts only. See the "Maintainers" note in the file itself for why.
+  - path: /etc/orbx/agent-instructions.md
+    permissions: '0644'
+    content: |
+      # Machine notes (orbx sandbox)
+
+      Facts about the machine you are running on, provisioned by orbx. These are
+      not project instructions: the repository's own AGENTS.md / CLAUDE.md still
+      governs how to work on the code, and wins wherever the two could disagree.
+
+      > **Maintainers:** machine facts only -- nothing here that a project could
+      > reasonably want to override. No style, workflow, testing or commit
+      > conventions. Copilot CLI ranks personal instructions *above* the
+      > repository's AGENTS.md, so an opinion added here would silently outrank
+      > the user's own project instructions in every sandbox, with nothing to
+      > indicate why. orbx provisions the machine, so it describes the machine.
+
+      ## This is an isolated VM
+
+      There is no host filesystem. Only the project directory is shared, as a
+      live bind mount -- writes there land on the host immediately and survive
+      this machine being deleted. Everything outside it is disposable.
+
+      ## PostgreSQL and Redis are already running
+
+      Both are systemd units, enabled and started at provisioning. Use
+      `systemctl status postgresql` / `systemctl status redis-server`. Do not
+      hand-start them, and do not assume this container has no systemd.
+
+      The Postgres superuser role is your Unix username, with trust auth on
+      local and loopback connections. No password is needed or wanted -- a bare
+      `psql` and `bin/rails db:create` work as-is. If a connection fails, report
+      the error; do not create roles or edit `pg_hba.conf`.
+
+      ## git cannot prompt for credentials
+
+      `GIT_TERMINAL_PROMPT=0` is set machine-wide, deliberately. Without it a
+      fetch or push against a private repo blocks on
+      `Username for 'https://github.com':` until the session is killed, which
+      reads as a slow network rather than as a stuck process.
+
+      If a git operation fails on authentication, **stop and ask the human to
+      run `gh auth login`**. That flow is interactive, so you cannot run it.
+
+      Do not work around it:
+
+      - do not set `GIT_TERMINAL_PROMPT=1` -- that restores the hang
+      - do not add a credential helper or write `~/.git-credentials`
+      - do not put a token in a remote URL -- `.git/config` lives on the host's
+        disk, so a credential written there outlives this sandbox
+
+      Authentication is not blocked, only *interactive* authentication: once
+      `gh auth login` has configured a credential helper, git works normally.
+
   # Default Starship prompt: icon-free and low-noise. Shows user, machine as
   # <name>@orb, path, and git only -- no language versions or container badge.
   # Seeded into each user's ~/.config on first boot (see user-setup.sh) so it
@@ -389,6 +452,23 @@ write_files:
       mkdir -p "$HOME/.config"
       if [ ! -f "$HOME/.config/starship.toml" ] && [ -f /etc/starship.toml ]; then
         cp /etc/starship.toml "$HOME/.config/starship.toml"
+      fi
+
+      # Seed machine-level instructions into both agents' home-directory paths
+      # from the single source in /etc/orbx. Guarded on the FILE, not the dir:
+      # the Claude Code and Copilot installers above may already have created
+      # ~/.claude and ~/.copilot, and a dir check would then skip the copy.
+      # Never touches the project's AGENTS.md -- that file is the user's, and it
+      # lives in the repo mounted from the host.
+      if [ -f /etc/orbx/agent-instructions.md ]; then
+        mkdir -p "$HOME/.claude" "$HOME/.copilot"
+        [ -f "$HOME/.claude/CLAUDE.md" ] \
+          || cp /etc/orbx/agent-instructions.md "$HOME/.claude/CLAUDE.md"
+        [ -f "$HOME/.copilot/copilot-instructions.md" ] \
+          || cp /etc/orbx/agent-instructions.md "$HOME/.copilot/copilot-instructions.md"
+        log "Seeded machine-level agent instructions."
+      else
+        log "WARNING: /etc/orbx/agent-instructions.md missing; agents unguided"
       fi
 
       # Sensible git defaults (name/email left for you to set)
