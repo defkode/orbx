@@ -195,3 +195,67 @@ load helpers/test_helper
   run grep -E "^\s+- postgresql-contrib$" "$ORBX_TEST_ROOT/templates/default.yaml"
   [ "$status" -ne 0 ]
 }
+
+# --- bundled default template: machine-level agent instructions (issue #6) ---
+# Both agents read a home-directory instructions file at the start of every
+# session. orbx seeds both from one source so agents stop rediscovering (or
+# guessing wrong about) the machine's conventions.
+
+@test "default template ships a single agent-instructions source" {
+  run grep -cE "^\s+- path: /etc/orbx/agent-instructions\.md$" \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]   # one source; both agent files are copies of it
+}
+
+@test "default template seeds both agents' instruction paths" {
+  # Vendor-fixed lookup paths: Claude Code reads ~/.claude/CLAUDE.md, Copilot
+  # CLI reads ~/.copilot/copilot-instructions.md. If either moves upstream this
+  # breaks silently, so pin both.
+  run grep -F '"$HOME/.claude/CLAUDE.md"' "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+  run grep -F '"$HOME/.copilot/copilot-instructions.md"' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "instruction seeding is guarded on the file, not the directory" {
+  # The Claude Code and Copilot installers run earlier in user-setup.sh and may
+  # already have created ~/.claude and ~/.copilot; a dir check would then skip
+  # the copy on a fresh machine. A file check also preserves a user's own file.
+  run grep -F '[ -f "$HOME/.claude/CLAUDE.md" ]' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+  run grep -F '[ -f "$HOME/.copilot/copilot-instructions.md" ]' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "default template never writes the project's AGENTS.md" {
+  # That file lives in the repo mounted from the host. Writing it would dirty
+  # the user's git tree and eventually get committed.
+  run grep -E "(^\s+- path:.*AGENTS\.md|cp .*AGENTS\.md|> *\"?\\\$HOME.*AGENTS\.md)" \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -ne 0 ]
+}
+
+@test "agent instructions carry the facts an agent would otherwise misdiagnose" {
+  # Not a tool inventory -- agents discover tools by running them. These are the
+  # conventions whose failure mode is the agent "fixing" the machine instead.
+  run grep -F 'trust auth on' "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+  run grep -F 'do not assume this container has no systemd' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+  run grep -F 'do not set `GIT_TERMINAL_PROMPT=1`' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "agent instructions state that project instructions win" {
+  # Copilot CLI ranks personal instructions above the repo's AGENTS.md, so this
+  # file must defer explicitly and stay to machine facts.
+  run grep -F 'wins wherever the two could disagree' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
