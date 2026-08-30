@@ -112,7 +112,9 @@ in order: `~/.orbx/templates/<name>.yaml` (yours), then the bundled templates
 that ship with the tool. A user template of the same name shadows the bundled
 one — so dropping `~/.orbx/templates/default.yaml` customizes the default
 without forking `orbx`. Run `orbx templates` to see what's available and which
-one a project resolves to.
+one a project resolves to; the `SOURCE` column mirrors the resolution order —
+`project` (a committed path, below), `env` (`$ORBX_TEMPLATE_DIR`), `user`
+(`~/.orbx/templates`), then `built-in`.
 
 ### Project-local templates
 

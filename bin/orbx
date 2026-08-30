@@ -92,29 +92,36 @@ orbx::script_dir() {
   ( cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd )
 }
 
+# True when a template value is a path rather than a name to look up: an
+# explicit ./ ../ / ~/ prefix, or a .yaml/.yml extension. The two forms are
+# disjoint, so a bare name never changes meaning.
+orbx::template_is_path() {
+  case "$1" in
+    /*|./*|../*|'~'/*|*.yaml|*.yml) return 0 ;;
+  esac
+  return 1
+}
+
 orbx::resolve_template() {
   local name="$1" dir
-  # Path-shaped values — an explicit ./ ../ / ~/ prefix, or a .yaml/.yml
-  # extension — are used as given and resolved against $PWD (the same anchor as
+  # A path is used as given and resolved against $PWD (the same anchor as
   # ./.orbxrc), so a repo can commit its own template next to its config. Bare
   # names fall through to the search path below, unchanged.
-  case "$name" in
-    /*|./*|../*|'~'/*|*.yaml|*.yml)
-      if [[ "$name" == '~'/* ]]; then
-        name="$HOME/${name#'~'/}"
-      fi
-      name="${name#./}"
-      if [[ "$name" != /* ]]; then
-        name="$PWD/$name"
-      fi
-      if [[ -f "$name" ]]; then
-        printf '%s' "$name"
-        return 0
-      fi
-      printf 'orbx: template file %q not found\n' "$name" >&2
-      return 1
-      ;;
-  esac
+  if orbx::template_is_path "$name"; then
+    if [[ "$name" == '~'/* ]]; then
+      name="$HOME/${name#'~'/}"
+    fi
+    name="${name#./}"
+    if [[ "$name" != /* ]]; then
+      name="$PWD/$name"
+    fi
+    if [[ -f "$name" ]]; then
+      printf '%s' "$name"
+      return 0
+    fi
+    printf 'orbx: template file %q not found\n' "$name" >&2
+    return 1
+  fi
   for dir in \
     "${ORBX_TEMPLATE_DIR:-}" \
     "$HOME/.orbx/templates" \
@@ -420,17 +427,35 @@ orbx::cmd_status() {
 
 orbx::cmd_templates() {
   orbx::resolve_context 2>/dev/null || true
-  local dir name seen=" "
+  local dir f name src mark seen=" " active="${ORBX_TEMPLATE:-default}"
   printf '%-16s %s\n' NAME SOURCE
-  for dir in "$HOME/.orbx/templates" "$ORBX_BUNDLED_TEMPLATE_DIR" "$(orbx::script_dir)/../templates"; do
-    [[ -d "$dir" ]] || continue
+  # A path-valued template is not on the search path, so list it on its own —
+  # otherwise the active template would be missing from this listing entirely.
+  if orbx::template_is_path "$active"; then
+    mark=" (active)"
+    [[ -f "${ORBX_TEMPLATE_PATH:-}" ]] || mark=" (active, missing)"
+    printf '%-16s %s%s\n' "$active" project "$mark"
+  fi
+  # Same order as orbx::resolve_template, so what is listed is what resolves.
+  for dir in \
+    "${ORBX_TEMPLATE_DIR:-}" \
+    "$HOME/.orbx/templates" \
+    "$ORBX_BUNDLED_TEMPLATE_DIR" \
+    "$(orbx::script_dir)/../templates"
+  do
+    [[ -n "$dir" && -d "$dir" ]] || continue
     for f in "$dir"/*.yaml; do
       [[ -e "$f" ]] || continue
       name="$(basename "$f" .yaml)"
       [[ "$seen" == *" $name "* ]] && continue
       seen+="$name "
-      local src="user"; [[ "$dir" == "$HOME/.orbx/templates" ]] || src="built-in"
-      local mark=""; [[ "$name" == "${ORBX_TEMPLATE:-default}" ]] && mark=" (active)"
+      case "$dir" in
+        "${ORBX_TEMPLATE_DIR:-}") src="env" ;;
+        "$HOME/.orbx/templates")  src="user" ;;
+        *)                        src="built-in" ;;
+      esac
+      mark=""
+      [[ "$name" == "$active" ]] && mark=" (active)"
       printf '%-16s %s%s\n' "$name" "$src" "$mark"
     done
   done
