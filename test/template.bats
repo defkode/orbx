@@ -188,6 +188,20 @@ load helpers/test_helper
   [ "$status" -eq 0 ]
 }
 
+@test "default template installs the mounted project's pinned tools" {
+  # Without this the versions still arrive -- mise auto-installs on first shim
+  # use -- but the download lands minutes after orbx reported ready, off the
+  # provisioning log, where an agent cannot tell it from a hang.
+  run grep -E 'cd "\$projdir" && "\$HOME/\.local/bin/mise" install' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+
+  # The path is discovered from the mount table, never passed in: the template
+  # does not know where the project landed.
+  run grep -F 'virtiofs' "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
 @test "default template registers git-lfs filters, not just the binary" {
   # Installing git-lfs is not enough: until `git lfs install` writes the
   # clean/smudge filters, cloning an LFS repo silently yields pointer files.
