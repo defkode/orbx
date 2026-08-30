@@ -94,6 +94,27 @@ orbx::script_dir() {
 
 orbx::resolve_template() {
   local name="$1" dir
+  # Path-shaped values — an explicit ./ ../ / ~/ prefix, or a .yaml/.yml
+  # extension — are used as given and resolved against $PWD (the same anchor as
+  # ./.orbxrc), so a repo can commit its own template next to its config. Bare
+  # names fall through to the search path below, unchanged.
+  case "$name" in
+    /*|./*|../*|'~'/*|*.yaml|*.yml)
+      if [[ "$name" == '~'/* ]]; then
+        name="$HOME/${name#'~'/}"
+      fi
+      name="${name#./}"
+      if [[ "$name" != /* ]]; then
+        name="$PWD/$name"
+      fi
+      if [[ -f "$name" ]]; then
+        printf '%s' "$name"
+        return 0
+      fi
+      printf 'orbx: template file %q not found\n' "$name" >&2
+      return 1
+      ;;
+  esac
   for dir in \
     "${ORBX_TEMPLATE_DIR:-}" \
     "$HOME/.orbx/templates" \
@@ -428,6 +449,7 @@ orbx::cmd_init() {
   cat > "$target" <<'EOF'
 # orbx project config — committed, shared with your team.
 template = default
+# template = .orbx/box.yaml   # a path commits the template with the repo
 # image  = ubuntu:26.04
 # name   = my-machine     # default: the sanitized folder name
 # mount  = false          # set false to skip auto-mounting $PWD
