@@ -55,6 +55,9 @@ packages:
   - ca-certificates
   - gnupg
   - unzip
+  # git only *Recommends* patch, so it arrives by accident today; agents apply
+  # diffs constantly, so ask for it by name.
+  - patch
   # --- developer CLIs (nice defaults for an AI-driven workflow) ---
   - ripgrep
   - fd-find
@@ -82,6 +85,36 @@ packages:
 #       export ANTHROPIC_API_KEY=sk-ant-...
 
 write_files:
+  # --- Non-interactive guard -------------------------------------------------
+  # This template is driven almost entirely by agents (Claude Code, Copilot
+  # CLI) from a shell they cannot type into. A git credential prompt does not
+  # fail there -- it blocks until the session is killed, and reads as a slow
+  # network rather than a stuck process. Fail fast instead.
+  #
+  # Deliberately not GIT_ASKPASS=/bin/true: that sends an empty credential over
+  # the wire and reports "Authentication failed", hiding the real cause.
+  # Authenticate with `gh auth login`; to prompt once by hand, run
+  # `GIT_TERMINAL_PROMPT=1 git ...`.
+  #
+  # Written in two places because they cover different shells (measured on a
+  # live machine -- neither alone is enough):
+  #   /etc/environment  reaches BOTH login and non-login shells, including a
+  #                     bare `orb -m <name> bash -c ...`, which never sources
+  #                     /etc/profile. Appended, never replaced -- PATH lives here.
+  #   /etc/profile.d/   ours alone, so it survives anything that rewrites
+  #                     /etc/environment, and exports properly for shells that
+  #                     source rather than parse it. Covers the login shells
+  #                     `orbx shell` and `orbx run` use (both `bash -lc`).
+  - path: /etc/environment
+    append: true
+    content: |
+      GIT_TERMINAL_PROMPT=0
+
+  - path: /etc/profile.d/10-orbx-agent.sh
+    permissions: '0644'
+    content: |
+      export GIT_TERMINAL_PROMPT=0
+
   # MOTD cheat-sheet shown on every login.
   - path: /etc/motd
     permissions: '0644'
