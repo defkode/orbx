@@ -97,4 +97,7 @@ the `TAP_TOKEN` secret). Bumping the version means editing it in **both**
 - Subcommand flags starting with `-` need a `--` separator, e.g.
   `orbx run -- bin/rails -e production` (see `orbx::parse_flags`).
 - `--dry-run` prints the `orb create` command and exits — use it to inspect
-  behavior without touching OrbStack.
+  behavior without touching OrbStack. Honored by every command that would
+  mutate OrbStack (`up`, `shell`, `run`, and the bare form); `down --dry-run`
+  prints the `orb delete` it would run. The gate is `orbx::dry_run_plan`, which
+  deliberately probes nothing, so a dry run never even calls `orb list`.

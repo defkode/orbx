@@ -282,13 +282,19 @@ orbx::main() {
   esac
 }
 
+# --dry-run for every path that would bring a machine up. Deliberately probes
+# nothing -- no `orb list`, no machine state -- so it cannot touch OrbStack at
+# all. Callers stop here: `if orbx::dry_run_plan; then return 0; fi`.
+orbx::dry_run_plan() {
+  [[ "$ORBX_DRYRUN" == "1" ]] || return 1
+  printf '%s ' "${ORBX_CREATE_CMD[@]}"; printf '\n'
+  return 0
+}
+
 orbx::cmd_up() {
   orbx::resolve_context
   orbx::build_create_cmd
-  if [[ "$ORBX_DRYRUN" == "1" ]]; then
-    printf '%s ' "${ORBX_CREATE_CMD[@]}"; printf '\n'
-    return 0
-  fi
+  if orbx::dry_run_plan; then return 0; fi
   orbx::ensure_up   # implemented in Task 10
 }
 
@@ -356,6 +362,7 @@ orbx::host_terminfo() {
 orbx::cmd_shell() {
   orbx::resolve_context
   orbx::build_create_cmd
+  if orbx::dry_run_plan; then return 0; fi
   orbx::ensure_up
   local ti; ti="$(orbx::host_terminfo)"
   if [[ "$ORBX_MOUNT_ON" == "true" ]]; then
@@ -374,6 +381,7 @@ orbx::cmd_run() {
   [[ $# -gt 0 ]] || orbx::die "run needs a command (e.g. orbx run bin/dev)"
   orbx::resolve_context
   orbx::build_create_cmd
+  if orbx::dry_run_plan; then return 0; fi
   orbx::ensure_up
   local ti; ti="$(orbx::host_terminfo)"
   if [[ "$ORBX_MOUNT_ON" == "true" ]]; then
@@ -391,6 +399,10 @@ orbx::cmd_logs()  { orbx::resolve_context; orb -m "$ORBX_NAME" tail -f /var/log/
 
 orbx::cmd_down() {
   orbx::resolve_context
+  if [[ "$ORBX_DRYRUN" == "1" ]]; then
+    printf 'orb delete -f %s\n' "$ORBX_NAME"
+    return 0
+  fi
   if [[ "$ORBX_YES" != "1" ]]; then
     [[ -t 0 ]] || orbx::die "refusing to delete non-interactively; pass --yes"
     printf 'Delete sandbox %q? Data inside the VM is lost (your folder is safe). [y/N] ' "$ORBX_NAME" >&2
