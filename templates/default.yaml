@@ -441,6 +441,34 @@ write_files:
       "$HOME/.local/bin/mise" exec -- git lfs install --skip-repo \
         || log "git lfs install failed"
 
+      # Install the mounted project's OWN pinned tools, not just the global
+      # ones above. mise auto-installs a missing tool the first time a shim
+      # runs it (auto_install defaults to true), so this is not about whether
+      # the versions ever arrive -- it is about when. Left alone, the download
+      # lands on whoever first types `ruby`, minutes AFTER orbx reported the
+      # machine ready, with no output on the provisioning log they were
+      # watching. An agent driving `orbx run` cannot tell that from a hang.
+      # Do it here, where the wait is expected and logged.
+      #
+      # The project path is discovered rather than passed in: this template
+      # never learns it (see orbx::mount_target, which only rewrites paths
+      # under $HOME). OrbStack surfaces every host share as a virtiofs mount,
+      # and that is exactly the set of directories that came from the host.
+      #
+      # Reads the project, never writes it: `mise install` resolves versions
+      # into ~/.local/share/mise and touches the repo only if lockfiles are
+      # enabled, which they are not by default. The mount is the user's real
+      # working tree, so it must come back clean.
+      while read -r projdir; do
+        for f in mise.toml .mise.toml .tool-versions; do
+          [ -f "$projdir/$f" ] || continue
+          log "Installing project tools pinned by $projdir/$f..."
+          ( cd "$projdir" && "$HOME/.local/bin/mise" install ) \
+            || log "mise install failed in $projdir (continuing)"
+          break
+        done
+      done < <(awk '$3 == "virtiofs" { print $2 }' /proc/mounts)
+
       # Claude Code (native installer -- self-updating, no Node dependency).
       # Alternative: mise exec -- npm install -g @anthropic-ai/claude-code
       log "Installing Claude Code..."
