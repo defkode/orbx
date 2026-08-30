@@ -178,6 +178,16 @@ load helpers/test_helper
   [ "$status" -eq 0 ]
 }
 
+@test "default template trusts mise configs under the user's home" {
+  # Trust does not survive the mount: a project trusted on the host is
+  # untrusted in the VM, so mise skips its mise.toml and the project's pinned
+  # Ruby/Node quietly do not apply. The only symptom is a WARN telling a human
+  # to run `mise trust` -- which agents driving `orbx run` never see.
+  run grep -E 'mise" settings set trusted_config_paths "\$HOME"' \
+    "$ORBX_TEST_ROOT/templates/default.yaml"
+  [ "$status" -eq 0 ]
+}
+
 @test "default template registers git-lfs filters, not just the binary" {
   # Installing git-lfs is not enough: until `git lfs install` writes the
   # clean/smudge filters, cloning an LFS repo silently yields pointer files.
