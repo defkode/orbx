@@ -17,6 +17,18 @@ point it at.
 brew install defkode/tap/orbx
 ```
 
+## Upgrade
+
+```sh
+brew update && brew upgrade orbx
+```
+
+`orbx --version` prints the installed version. Upgrading only replaces the CLI
+— existing machines, `~/.orbx/config`, and `~/.orbx/templates` are untouched,
+and already-provisioned sandboxes keep running as they are. Pick up a new
+bundled template in an existing project by recreating its machine
+(`orbx down` then `orbx up`).
+
 ## Everyday flow
 
 ```sh
