@@ -139,7 +139,7 @@ orbx::resolve_template() {
 }
 
 # Resolved run state (populated by orbx::resolve_context).
-declare -g ORBX_NAME ORBX_IMAGE ORBX_ARCH ORBX_TEMPLATE ORBX_TEMPLATE_PATH ORBX_MOUNT_ON ORBX_DRYRUN ORBX_YES
+declare -g ORBX_NAME ORBX_IMAGE ORBX_ARCH ORBX_TEMPLATE ORBX_TEMPLATE_PATH ORBX_MOUNT_ON ORBX_DRYRUN ORBX_YES ORBX_VERBOSE
 declare -ga ORBX_MOUNTS ORBX_CREATE_CMD
 
 orbx::resolve_context() {
@@ -192,7 +192,7 @@ orbx::die() { printf 'orbx: %s\n' "$*" >&2; exit 1; }
 
 orbx::parse_flags() {
   ORBX_FLAG_MOUNTS=()
-  ORBX_DRYRUN=0; ORBX_YES=0; ORBX_FORCE=0
+  ORBX_DRYRUN=0; ORBX_YES=0; ORBX_FORCE=0; ORBX_VERBOSE=0
   ORBX_ARGS=()
   while (( $# )); do
     case "$1" in
@@ -204,6 +204,7 @@ orbx::parse_flags() {
       --no-mount) ORBX_FLAG_NO_MOUNT=1; shift ;;
       --dry-run)  ORBX_DRYRUN=1; shift ;;
       --yes|-y)   ORBX_YES=1; shift ;;
+      --verbose|-v) ORBX_VERBOSE=1; shift ;;
       --force)    ORBX_FORCE=1; shift ;;
       --)         shift; while (( $# )); do ORBX_ARGS+=("$1"); shift; done ;;
       -*)         orbx::die "unknown flag: $1" ;;
@@ -249,6 +250,7 @@ FLAGS
   --arch <arch>   amd64 | arm64 (default: native)
   --dry-run       Print the orb command that would run, then exit
   --yes, -y       Assume yes for confirmations
+  --verbose, -v   Stream the provisioning log while waiting (instead of a spinner)
   --force         Overwrite when scaffolding (orbx init)
   -h, --help      Show this help
   --version       Show version
@@ -301,22 +303,112 @@ orbx::cmd_up() {
 orbx::machine_exists()  { orb list -q        | grep -Fxq -- "$1"; }
 orbx::machine_running() { orb list -r -q     | grep -Fxq -- "$1"; }
 
+# --- Progress while provisioning runs --------------------------------------
+# First boot spends minutes in `mise install` (Ruby, Node, and the mounted
+# project's own pinned tools) with the machine already created and running, so
+# a silent poll loop is indistinguishable from a hang. Default: a spinner with
+# elapsed time. --verbose: stream the guest's provisioning log instead.
+ORBX_PROVISION_LOG=/var/log/sandbox-provision.log
+ORBX_SPIN_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+ORBX_SPIN_I=0
+
+# Spinner only when it has a terminal to redraw in and isn't competing with the
+# log stream. With stderr redirected (CI, an agent driving `orbx run`) the
+# escape codes would be noise, so we stay silent exactly as before.
+orbx::spinner_on() { [[ "${ORBX_VERBOSE:-0}" != "1" && -t 2 ]]; }
+
+orbx::spinner_draw() {
+  orbx::spinner_on || return 0
+  local e=$SECONDS
+  printf '\r\033[K%s provisioning… %dm%02ds' \
+    "${ORBX_SPIN_FRAMES[ORBX_SPIN_I]}" $(( e / 60 )) $(( e % 60 )) >&2
+  ORBX_SPIN_I=$(( (ORBX_SPIN_I + 1) % ${#ORBX_SPIN_FRAMES[@]} ))
+}
+
+orbx::spinner_clear() {
+  orbx::spinner_on || return 0
+  printf '\r\033[K' >&2
+}
+
+# Every exit from the wait -- ready, failed, timeout, Ctrl-C -- goes through
+# here, so the spinner's last frame is never left on the line and the interrupt
+# trap does not outlive the wait it belongs to.
+orbx::wait_done() { trap - INT; orbx::spinner_clear; }
+
+# Ctrl-C during a multi-minute provision must not leave a stray spinner frame
+# where the shell is about to draw its prompt. Wipe the line, restore the
+# default disposition, then re-raise so we die of the signal we were sent
+# (exit 130) instead of returning as if the wait had finished. $BASHPID, not
+# $$: sourced into another shell (the test suite does this), the signal must
+# stay with the subshell running the wait.
+orbx::on_interrupt() {
+  orbx::wait_done
+  kill -INT "$BASHPID"
+}
+
+# Sleep $1 seconds, animating the spinner ~5x a second so the wait never looks
+# frozen. With no spinner to draw it is a plain sleep, so poll timing (and the
+# zeroed timers the tests rely on) is unchanged.
+orbx::wait_tick() {
+  local secs="$1" i
+  (( secs > 0 )) || return 0
+  orbx::spinner_on || { sleep "$secs"; return 0; }
+  for (( i = 0; i < secs * 5; i++ )); do
+    orbx::spinner_draw
+    sleep 0.2
+  done
+}
+
+# Verbose mode: print whatever the provisioning log has grown by since the last
+# poll. Asking for everything past the lines already shown keeps this inside the
+# existing poll loop -- no background `tail -f` to supervise and kill, and a log
+# that does not exist yet simply comes back empty. Echoes the new line count on
+# stdout for the caller to carry into the next poll; log lines go to stderr.
+orbx::stream_log() {
+  local name="$1" shown="$2" line new=0
+  if [[ "${ORBX_VERBOSE:-0}" != "1" ]]; then printf '%s' "$shown"; return 0; fi
+  while IFS= read -r line; do
+    printf '%s\n' "$line" >&2
+    new=$(( new + 1 ))
+  done < <(orb -m "$name" -u root tail -n "+$(( shown + 1 ))" "$ORBX_PROVISION_LOG" 2>/dev/null)
+  printf '%s' "$(( shown + new ))"
+}
+
 orbx::wait_ready() {
   local name="$1"
   local timeout="${ORBX_READY_TIMEOUT:-1200}"
   local interval="${ORBX_POLL_INTERVAL:-5}"
   local delay="${ORBX_POLL_DELAY:-2}" waited=0 status
+  local shown=0 first=1
+  SECONDS=0
+  trap orbx::on_interrupt INT
   (( delay > 0 )) && sleep "$delay"
   while :; do
     status="$(orb -m "$name" -u root cat /etc/sandbox-status 2>/dev/null || true)"
+    # An already-provisioned machine answers `ready` on the very first poll:
+    # nothing is being waited on, so there is no progress to report and no
+    # point replaying a log of work that finished days ago.
+    [[ "$status" == "ready" && "$first" == "1" ]] && { orbx::wait_done; return 0; }
+    first=0
+    # Say once that something is being waited on. The spinner covers a
+    # terminal; this line is what a redirected stderr (CI, an agent driving
+    # `orbx run`) gets, and it points at the two ways to see more.
+    (( waited == 0 )) && [[ "${ORBX_VERBOSE:-0}" != "1" ]] && \
+      printf 'orbx: provisioning %s — first run installs the toolchain (-v streams the log, or: orbx logs)\n' \
+        "$name" >&2
+    shown="$(orbx::stream_log "$name" "$shown")"
     case "$status" in
-      ready)  return 0 ;;
-      failed) printf 'orbx: provisioning failed. See: orbx logs\n' >&2; return 1 ;;
+      ready)  orbx::wait_done
+              printf 'orbx: ready in %dm%02ds\n' $(( SECONDS / 60 )) $(( SECONDS % 60 )) >&2
+              return 0 ;;
+      failed) orbx::wait_done
+              printf 'orbx: provisioning failed. See: orbx logs\n' >&2; return 1 ;;
     esac
     (( waited >= timeout )) && break
-    (( interval > 0 )) && sleep "$interval"
+    orbx::wait_tick "$interval"
     waited=$(( waited + (interval > 0 ? interval : 1) ))
   done
+  orbx::wait_done
   printf 'orbx: timed out after %ss waiting for ready. See: orbx logs\n' "$timeout" >&2
   return 1
 }
@@ -395,7 +487,7 @@ orbx::cmd_run() {
 
 orbx::cmd_stop()  { orbx::resolve_context; orb stop  "$ORBX_NAME"; }
 orbx::cmd_list()  { orb list; }
-orbx::cmd_logs()  { orbx::resolve_context; orb -m "$ORBX_NAME" tail -f /var/log/sandbox-provision.log; }
+orbx::cmd_logs()  { orbx::resolve_context; orb -m "$ORBX_NAME" tail -f "$ORBX_PROVISION_LOG"; }
 
 orbx::cmd_down() {
   orbx::resolve_context
