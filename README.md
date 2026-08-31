@@ -40,6 +40,11 @@ orbx                # creates (or starts) myapp's sandbox, waits for it to be
 Run it again later and it just starts the existing machine and shells in —
 provisioning only happens once.
 
+That first run takes a few minutes: it installs the toolchain, including the
+tools your project pins in `mise.toml`/`.tool-versions`. A spinner shows how
+long it has been going; `orbx -v` streams the provisioning log inline instead,
+and `orbx logs` tails the same log from another terminal.
+
 ## Commands
 
 The output of `orbx --help`:
@@ -74,6 +79,7 @@ FLAGS
   --arch <arch>   amd64 | arm64 (default: native)
   --dry-run       Print the orb command that would run, then exit
   --yes, -y       Assume yes for confirmations
+  --verbose, -v   Stream the provisioning log while waiting (instead of a spinner)
   --force         Overwrite when scaffolding (orbx init)
   -h, --help      Show this help
   --version       Show version

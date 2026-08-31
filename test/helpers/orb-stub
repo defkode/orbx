@@ -26,6 +26,20 @@ if [[ "$*" == *"cat /etc/sandbox-status"* ]]; then
   exit 0
 fi
 
+# Provisioning log reads: `orb -m NAME -u root tail -n +N /var/log/...`.
+# Emits $ORB_STUB_PROVISION_LOG_FIXTURE from line N on, so incremental polling
+# sees each line exactly once, the way the real log does as it grows.
+if [[ "$*" == *"/var/log/sandbox-provision.log"* ]]; then
+  fixture="${ORB_STUB_PROVISION_LOG_FIXTURE:-}"
+  [[ -n "$fixture" && -f "$fixture" ]] || exit 0
+  start=1
+  for arg in "$@"; do
+    case "$arg" in +[0-9]*) start="${arg#+}" ;; esac
+  done
+  tail -n "+$start" "$fixture"
+  exit 0
+fi
+
 # `orb info NAME -f json` -> fixture JSON.
 if [[ "${1:-}" == "info" ]]; then
   cat "${ORB_STUB_INFO_FIXTURE:-/dev/null}"

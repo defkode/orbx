@@ -60,6 +60,25 @@ machine, then `wait_ready` polls `orb -m <name> -u root cat /etc/sandbox-status`
 until it reads `ready` (or `failed`/timeout). Readiness is driven by the
 template writing that file — the CLI and the template share this contract.
 
+**Provisioning feedback.** That poll can run for minutes on first boot (mise
+installs Ruby/Node plus the project's pinned tools), so `wait_ready` reports
+progress: a spinner + elapsed time, redrawn on stderr only when stderr is a TTY
+(`orbx::spinner_on`), or — with `-v`/`--verbose` — the guest's
+`/var/log/sandbox-provision.log` streamed inline. The stream is *incremental
+polling*, not a background `tail -f`: `orbx::stream_log` asks for everything
+past the line count it was handed and echoes the new count back, so there is no
+child process to supervise and a log that doesn't exist yet is simply empty. A
+machine that answers `ready` on the very first poll was already provisioned, so
+it returns silently — the common path prints nothing.
+
+Every exit from the wait funnels through `orbx::wait_done` (clear the line, drop
+the trap), including the `INT` trap: Ctrl-C wipes the spinner's last frame and
+then re-raises with `kill -INT "$BASHPID"`, so an interrupted `orbx` dies of the
+signal (130) instead of returning as if the wait had finished. Tests cannot
+deliver a real Ctrl-C — a backgrounded job inherits SIGINT *ignored*, and bash
+cannot trap what was ignored on entry — so they assert the arm/disarm and the
+handler's re-raise separately.
+
 **Terminfo prelude.** `ORBX_TERM_PRELUDE` is a guest-side bash snippet prepended
 to every `shell`/`run` invocation. The host's `infocmp -x $TERM`
 (`orbx::host_terminfo`) is passed as a positional arg; the guest seeds its own
